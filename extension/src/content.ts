@@ -59,6 +59,7 @@ const TEXT = {
   noTranscript: "Unyap: this video has no transcript.",
   captureFailed: "Unyap: couldn't read the transcript.",
   notPublic: "Unyap: skipped (private or unlisted video).",
+  unsupported: "Unyap: live streams and premieres aren't supported.",
   offer: "Unyap this video",
   retry: "Try again",
   previous: "Previous",
@@ -393,6 +394,7 @@ function parseCaptureMessage(detail: string): CaptureMessage | null {
     (message.type === "no-transcript" ||
       message.type === "capture-failed" ||
       message.type === "not-public" ||
+      message.type === "unsupported" ||
       message.type === "waiting") &&
     typeof message.videoId === "string"
   ) {
@@ -431,6 +433,7 @@ function onCapture(event: Event): void {
   if (message.type === "no-transcript") show(target, status(TEXT.noTranscript));
   else if (message.type === "capture-failed") show(target, { kind: "status", text: TEXT.captureFailed, options: false, dismiss: true, retry: true });
   else if (message.type === "not-public") show(target, status(TEXT.notPublic));
+  else if (message.type === "unsupported") show(target, status(TEXT.unsupported));
   else {
     show(target, analyzing());
     void analyze(target, message.request);

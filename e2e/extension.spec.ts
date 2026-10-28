@@ -52,6 +52,24 @@ async function launch(outputPath: string): Promise<{ context: BrowserContext; wo
   return { context, worker };
 }
 
+/** Serves every youtube.com URL as a fake watch page whose player answers getPlayerResponse with `response` (JS). */
+async function routeWatchPage(context: BrowserContext, response: string): Promise<void> {
+  await context.route("https://www.youtube.com/**", (route) => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><html><head><style>
+      body { margin: 40px; background: #edf0f2; }
+      #movie_player { position: relative; width: 960px; height: 540px; background: #172029; }
+      video { width: 100%; height: 100%; }
+      .ytp-chrome-bottom { position: absolute; bottom: 0; left: 12px; right: 12px; height: 42px; }
+      .ytp-progress-bar-container { position: relative; height: 6px; background: #777; }
+    </style></head><body><div id="movie_player" tabindex="0"><video></video>
+      <div class="ytp-chrome-bottom"><div class="ytp-progress-bar-container"></div></div>
+    </div><script>
+      document.querySelector("#movie_player").getPlayerResponse = () => ${response};
+    </script></body></html>`,
+  }));
+}
+
 test("the extension analyzes with the viewer's own key and caches locally", async ({}, info) => {
   const { context, worker } = await launch(info.outputPath("profile"));
   try {
@@ -124,22 +142,8 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
     const request = { ...e2eEggVideo, videoId: randomBytes(8).toString("base64url") };
     await fakeOpenAi(worker, await mockAnswers(request), true);
 
-    await context.route("https://www.youtube.com/**", (route) => route.fulfill({
-      contentType: "text/html",
-      body: `<!doctype html><html><head><style>
-        body { margin: 40px; background: #edf0f2; }
-        #movie_player { position: relative; width: 960px; height: 540px; background: #172029; }
-        video { width: 100%; height: 100%; }
-        .ytp-chrome-bottom { position: absolute; bottom: 0; left: 12px; right: 12px; height: 42px; }
-        .ytp-progress-bar-container { position: relative; height: 6px; background: #777; }
-      </style></head><body><div id="movie_player" tabindex="0"><video></video>
-        <div class="ytp-chrome-bottom"><div class="ytp-progress-bar-container"></div></div>
-      </div><script>
-        document.querySelector("#movie_player").getPlayerResponse = () => ({
-          videoDetails: { videoId: new URL(location.href).searchParams.get("v"), lengthSeconds: "0" }
-        });
-      </script></body></html>`,
-    }));
+    // This player never reports the video as loaded, so page.ts keeps waiting and the test hands over the transcript.
+    await routeWatchPage(context, `({ videoDetails: { videoId: "not-this-one" } })`);
     const page = await context.newPage();
     await page.goto(`https://www.youtube.com/watch?v=${request.videoId}`);
 
@@ -164,6 +168,21 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
     await expect(page.getByRole("button", { name: /^Unyap it/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "Unyap this video" })).toHaveCount(0);
     expect(await worker.evaluate(() => (globalThis as typeof globalThis & { calls?: number }).calls)).toBe(2);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a live stream or premiere says it is not supported instead of analyzing forever", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    await worker.evaluate((key) => chrome.storage.local.set({ openaiApiKey: key }), KEY);
+    await routeWatchPage(context, `({ videoDetails: { videoId: new URL(location.href).searchParams.get("v"), lengthSeconds: "0" } })`);
+    const page = await context.newPage();
+    await page.goto(`https://www.youtube.com/watch?v=${randomBytes(8).toString("base64url")}`);
+
+    await page.getByRole("button", { name: "Unyap this video" }).click();
+    await expect(page.locator(".unyap-note-text")).toHaveText("Unyap: live streams and premieres aren't supported.");
   } finally {
     await context.close();
   }

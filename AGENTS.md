@@ -196,7 +196,7 @@ browser on youtube.com can fetch transcripts.
 - Private and unlisted videos are never captured or sent: when the player
   response has `videoDetails.isPrivate` or
   `microformat.playerMicroformatRenderer.isUnlisted` set to `true`, the pill
-  shows the skipped status instead.
+  shows the skipped status instead. Live streams and premieres (no length yet) say they are not supported.
 - Entries: `page.ts` runs in the `MAIN` world (captures the transcript through
   `#movie_player`, no `chrome.*`), `content.ts` in the isolated world (draws the
   UI, messages the service worker), `background.ts` is the service worker (OpenAI
