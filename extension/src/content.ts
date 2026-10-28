@@ -75,6 +75,11 @@ type Display =
 interface View {
   videoId: string;
   handled: boolean;
+  /**
+   * A capture was asked for. Until then capture messages are ignored: an analysis starts only from a click or
+   * auto mode.
+   */
+  requested: boolean;
   display: Display | null;
   debug: DebugOverlay | null;
   port: chrome.runtime.Port | null;
@@ -126,7 +131,9 @@ function syncView(): void {
   if (view?.videoId === videoId) return;
   removeUi();
   const previous = view;
-  view = videoId === null ? null : { videoId, handled: false, display: null, debug: null, port: null };
+  view = videoId === null
+    ? null
+    : { videoId, handled: false, requested: false, display: null, debug: null, port: null };
   previous?.port?.disconnect();
   previous?.debug?.element.remove();
   if (view !== null) void showCached(view);
@@ -159,6 +166,7 @@ async function showCached(target: View): Promise<void> {
 function startCapture(target: View): void {
   if (view !== target) return;
   target.handled = false;
+  target.requested = true;
   show(target, analyzing());
   document.dispatchEvent(new CustomEvent(START_CAPTURE_EVENT, { detail: target.videoId }));
 }
@@ -422,7 +430,7 @@ function onCapture(event: Event): void {
   syncView();
   const videoId = message.type === "transcript" ? message.request.videoId : message.videoId;
   const target = view;
-  if (target === null || target.videoId !== videoId || target.handled) return;
+  if (target === null || target.videoId !== videoId || target.handled || !target.requested) return;
   if (message.type === "waiting") {
     // Not handled yet: the capture's result replaces this status.
     show(target, analyzing());

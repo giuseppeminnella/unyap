@@ -147,12 +147,19 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
     const page = await context.newPage();
     await page.goto(`https://www.youtube.com/watch?v=${request.videoId}`);
 
+    // A transcript nobody asked for is ignored: no analysis, the offer stays.
+    const dispatchTranscript = () => page.evaluate(({ request, name }) => {
+      document.dispatchEvent(new CustomEvent(name, { detail: JSON.stringify({ type: "transcript", request }) }));
+    }, { request, name: CAPTURE_EVENT });
+    await expect(page.getByRole("button", { name: "Unyap this video" })).toBeVisible();
+    await dispatchTranscript();
+    await expect(page.getByRole("button", { name: "Unyap this video" })).toBeVisible();
+    expect(await worker.evaluate(() => (globalThis as typeof globalThis & { calls?: number }).calls ?? 0)).toBe(0);
+
     // Nothing is captured until the viewer asks; the fixture player has no captions, so the test hands over the transcript.
     await page.getByRole("button", { name: "Unyap this video" }).click();
     await expect(page.locator(".unyap-note-text")).toHaveText("Unyap: analyzing…");
-    await page.evaluate(({ request, name }) => {
-      document.dispatchEvent(new CustomEvent(name, { detail: JSON.stringify({ type: "transcript", request }) }));
-    }, { request, name: CAPTURE_EVENT });
+    await dispatchTranscript();
 
     const panel = page.getByRole("region", { name: "Unyap debug mode" });
     await expect(panel).toBeVisible();
