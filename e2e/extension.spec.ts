@@ -194,3 +194,30 @@ test("a live stream or premiere says it is not supported instead of analyzing fo
     await context.close();
   }
 });
+
+test("an analysis that could not be cached is still shown", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    await worker.evaluate((key) => chrome.storage.local.set({ openaiApiKey: key }), KEY);
+    await fakeOpenAi(worker, await mockAnswers(e2eEggVideo));
+    // Every cache write fails, as on a full or broken profile.
+    await worker.evaluate(() => {
+      const area = chrome.storage.local;
+      const set = area.set.bind(area);
+      area.set = ((items: Record<string, unknown>) => Object.keys(items).some((key) => key.startsWith("analysis:"))
+        ? Promise.reject(new Error("storage write failed"))
+        : set(items)) as typeof area.set;
+    });
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+
+    const response: AnalyzeResponse = await page.evaluate((request) =>
+      chrome.runtime.sendMessage({ type: "analyze", request }), e2eEggVideo);
+    expect(response).toMatchObject({ ok: true, analysis: { videoId: e2eEggVideo.videoId } });
+    const miss: CachedResponse = await page.evaluate((videoId) =>
+      chrome.runtime.sendMessage({ type: "cached", videoId }), e2eEggVideo.videoId);
+    expect(miss.analysis).toBeNull();
+  } finally {
+    await context.close();
+  }
+});
