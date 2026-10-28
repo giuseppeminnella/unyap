@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" class="unyap-options">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Unyap options</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="unyap-options-body">
+    <main class="unyap-options-main">
+      <h1 class="unyap-options-title">Unyap</h1>
+      <p class="unyap-options-intro">Impatience, now a browser extension.</p>
+      <form id="unyap-form" class="unyap-form" novalidate>
+        <div class="unyap-field">
+          <label class="unyap-label" for="unyap-api-key">OpenAI API key</label>
+          <input
+            id="unyap-api-key"
+            class="unyap-input"
+            name="openaiApiKey"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="unyap-api-key-help unyap-api-key-error"
+          />
+          <p id="unyap-api-key-help" class="unyap-help">
+            No key yet?
+            <a class="unyap-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">Get a key</a>
+            from OpenAI and set a monthly budget for it in your OpenAI dashboard, so spending stays capped.
+            The key is stored only in this browser and sent only to api.openai.com. A new video costs about $0.001;
+            videos you already analyzed are free.
+          </p>
+          <p id="unyap-api-key-error" class="unyap-field-error" aria-live="polite"></p>
+        </div>
+        <div class="unyap-field">
+          <label class="unyap-check" for="unyap-auto-analyze">
+            <input id="unyap-auto-analyze" type="checkbox" aria-describedby="unyap-auto-help" />
+            Analyze every video automatically
+          </label>
+          <p id="unyap-auto-help" class="unyap-help">
+            Off: videos you already analyzed show at once, and new ones wait for you to click "Unyap this video".
+            On: every new video with captions is analyzed as soon as it opens.
+          </p>
+        </div>
+        <div class="unyap-field">
+          <label class="unyap-check" for="unyap-debug-mode">
+            <input id="unyap-debug-mode" type="checkbox" aria-describedby="unyap-debug-help" />
+            Debug mode
+          </label>
+          <p id="unyap-debug-help" class="unyap-help">
+            Show live Decisions API activity and judgment progress over the video.
+          </p>
+        </div>
+        <div class="unyap-form-footer">
+          <button class="unyap-save" type="submit">Save</button>
+          <p id="unyap-saved" class="unyap-saved" role="status"></p>
+        </div>
+      </form>
+      <div class="unyap-field unyap-options-cache">
+        <p class="unyap-help">Analyses are cached in this browser and removed after 60 days.</p>
+        <button id="unyap-clear-cache" class="unyap-note-button" type="button">Clear cache</button>
+        <p id="unyap-cleared" class="unyap-saved" role="status"></p>
+      </div>
+      <p class="unyap-help unyap-options-legal">
+        Unyap runs on your computer with your own key, at your own responsibility and cost. Nothing is sent to me,
+        its developer, and I store no data.
+        <a class="unyap-link" href="https://giuseppe.dev/unyap/terms/" target="_blank" rel="noreferrer">Terms of use</a>
+        ·
+        <a class="unyap-link" href="https://giuseppe.dev/unyap/privacy/" target="_blank" rel="noreferrer">Privacy policy</a>
+      </p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

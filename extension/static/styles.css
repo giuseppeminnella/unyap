@@ -1,0 +1,417 @@
+/* Unyap's only stylesheet: injected on YouTube (strip, marker, pill) and linked from the options page.
+   Every selector targets unyap- classes, so nothing here can restyle YouTube. */
+
+/* The palette. light-dark() picks a value by each root's color-scheme below. */
+.unyap-options,
+.unyap-strip,
+.unyap-pill,
+.unyap-debug {
+  --unyap-bg: light-dark(#fbfaf7, #141412);
+  --unyap-surface: light-dark(#ffffff, #1e1d1b);
+  --unyap-text: light-dark(#1c1b19, #f2efe9);
+  --unyap-muted: light-dark(#6b675f, #a39e94);
+  --unyap-border: light-dark(#e4e0d8, #34322e);
+  --unyap-filler: light-dark(#d9d4ca, #4a4741);
+  --unyap-context: #f2c14e;
+  --unyap-substance: light-dark(#2fa84f, #3fbf5f);
+  --unyap-accent: #e8572a;
+  --unyap-on-accent: #1c1b19;
+  --unyap-radius: 10px;
+  --unyap-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* The options page follows the system theme. On the video the strip keeps the light palette (it sits on the dark
+   progress bar) and the pill the dark one. */
+.unyap-options {
+  color-scheme: light dark;
+}
+
+.unyap-strip {
+  color-scheme: light;
+}
+
+.unyap-pill {
+  color-scheme: dark;
+}
+
+/* Strip and payoff marker, inside YouTube's progress bar container, directly above the bar. */
+.unyap-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 4px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.unyap-block {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.unyap-filler {
+  background: var(--unyap-filler);
+}
+
+.unyap-context {
+  background: var(--unyap-context);
+}
+
+.unyap-substance {
+  background: var(--unyap-substance);
+}
+
+.unyap-marker {
+  position: absolute;
+  bottom: -3px;
+  width: 4px;
+  height: 12px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--unyap-surface);
+  box-shadow: 0 0 0 1px var(--unyap-text);
+}
+
+/* The pill, in YouTube's bottom chrome; content.ts places it above the strip. */
+.unyap-pill {
+  position: absolute;
+  z-index: 70;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--unyap-font);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* During an ad the progress bar shows the ad's timeline. */
+.ad-showing .unyap-strip,
+.ad-showing .unyap-pill,
+.ad-showing .unyap-debug {
+  display: none;
+}
+
+.unyap-jump {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 5px 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-accent);
+  color: var(--unyap-on-accent);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.unyap-jump:hover {
+  background: var(--unyap-context);
+}
+
+/* Previous and Next good part: secondary buttons that keep their full label while the Jump button shrinks. */
+.unyap-nav {
+  flex: none;
+  margin: 0;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-surface);
+  color: var(--unyap-text);
+  box-shadow: 0 0 0 1px var(--unyap-border);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.unyap-nav:hover:enabled {
+  background: var(--unyap-border);
+}
+
+.unyap-nav:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.unyap-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 12px;
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-surface);
+  color: var(--unyap-text);
+  box-shadow: 0 0 0 1px var(--unyap-border);
+  white-space: nowrap;
+}
+
+.unyap-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unyap-note-button,
+.unyap-note-dismiss {
+  flex: none;
+  margin: 0;
+  border: 0;
+  color: var(--unyap-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.unyap-note-button {
+  padding: 2px 10px;
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-border);
+  font-weight: 600;
+}
+
+.unyap-note-dismiss {
+  width: 24px;
+  height: 24px;
+  margin: -3px -6px -3px 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--unyap-muted);
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.unyap-note-button:hover,
+.unyap-note-dismiss:hover {
+  background: var(--unyap-bg);
+  color: var(--unyap-text);
+}
+
+/* Options page. */
+.unyap-options,
+.unyap-options-body {
+  background: var(--unyap-bg);
+}
+
+.unyap-options-body {
+  margin: 0;
+  color: var(--unyap-text);
+  font-family: var(--unyap-font);
+  line-height: 1.5;
+}
+
+.unyap-options-main {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+.unyap-options-title {
+  margin: 0 0 4px;
+  font-size: 1.75rem;
+}
+
+.unyap-options-intro {
+  margin: 0 0 24px;
+  color: var(--unyap-muted);
+}
+
+.unyap-form {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--unyap-border);
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-surface);
+}
+
+.unyap-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.unyap-label {
+  font-weight: 600;
+}
+
+.unyap-options-cache {
+  justify-items: start;
+  margin-top: 20px;
+  padding: 0 20px;
+}
+
+.unyap-options-cache .unyap-note-button {
+  padding: 8px 16px;
+}
+
+.unyap-options-main .unyap-options-legal {
+  margin-top: 28px;
+  padding: 0 20px;
+}
+
+.unyap-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--unyap-muted);
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-bg);
+  color: var(--unyap-text);
+  font: inherit;
+}
+
+.unyap-input[aria-invalid="true"] {
+  border-color: var(--unyap-accent);
+  box-shadow: 0 0 0 1px var(--unyap-accent);
+}
+
+.unyap-field-error,
+.unyap-saved {
+  margin: 0;
+  color: var(--unyap-text);
+}
+
+.unyap-field-error {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.unyap-field-error:empty {
+  display: none;
+}
+
+.unyap-field-error::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--unyap-accent);
+}
+
+.unyap-form-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.unyap-save {
+  padding: 10px 20px;
+  border: 0;
+  border-radius: var(--unyap-radius);
+  background: var(--unyap-accent);
+  color: var(--unyap-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.unyap-link {
+  color: var(--unyap-text);
+  font-weight: 600;
+  text-decoration-color: var(--unyap-accent);
+  text-underline-offset: 2px;
+}
+
+.unyap-jump:focus-visible,
+.unyap-nav:focus-visible,
+.unyap-link:focus-visible,
+.unyap-note-button:focus-visible,
+.unyap-note-dismiss:focus-visible,
+.unyap-input:focus-visible,
+.unyap-save:focus-visible {
+  outline: 2px solid var(--unyap-text);
+  outline-offset: 2px;
+}
+
+.unyap-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.unyap-check input { accent-color: var(--unyap-accent); }
+.unyap-help { margin: 0; color: var(--unyap-muted); font-size: 0.875rem; }
+
+.unyap-debug {
+  position: absolute;
+  inset: 0 0 56px auto;
+  z-index: 60;
+  box-sizing: border-box;
+  width: 33.333333%;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  border-left: 1px solid rgb(255 255 255 / 18%);
+  background: rgb(0 0 0 / 78%);
+  backdrop-filter: blur(5px);
+  color: #f5f5f5;
+  color-scheme: dark;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: left;
+  text-shadow: none;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.unyap-debug-header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.unyap-debug-brand { font-size: 11px; letter-spacing: 0.06em; }
+.unyap-debug-status { color: #ffad80; font-size: 10px; }
+.unyap-debug-model { margin: 0; color: #b9c2cc; font-size: 10px; }
+.unyap-debug-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  scrollbar-width: thin;
+}
+.unyap-debug-entry { margin: 0 0 12px; padding: 0; }
+.unyap-debug-time { display: block; color: #adb8c5; font-size: 10px; }
+.unyap-debug-title { display: block; font-size: 12px; font-weight: 600; }
+.unyap-debug-description { margin: 3px 0 0; color: #bec8d2; font-size: 11px; }
+.unyap-debug-entry[data-error] .unyap-debug-title { color: #ffb6ad; }
+.unyap-debug-work { flex: none; border-top: 1px solid rgb(255 255 255 / 20%); padding-top: 10px; }
+.unyap-debug-numbers { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.unyap-debug-count { font: 700 28px/1 var(--unyap-font); }
+.unyap-debug-caption { color: #d3dae2; font-size: 10px; }
+.unyap-debug-progress { position: relative; overflow: hidden; height: 24px; background: rgb(255 255 255 / 15%); }
+.unyap-debug-progress-fill { height: 100%; width: 0; background: #e8572a; transition: width 900ms ease; }
+.unyap-debug[data-state="running"] .unyap-debug-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 22%) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: unyap-debug-pulse 1.8s linear infinite;
+}
+.unyap-debug[data-state="complete"] .unyap-debug-progress-fill { background: #3fbf5f; }
+.unyap-debug[data-state="complete"] .unyap-debug-status { color: #9dddac; }
+.unyap-debug[data-state="error"] .unyap-debug-status { color: #ffb6ad; }
+.unyap-debug-detail { margin: 8px 0 0; color: #b9c2cc; font-size: 10px; }
+.unyap-debug-log:focus-visible, .unyap-check input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@keyframes unyap-debug-pulse { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .unyap-debug-progress-fill { transition: none; }
+  .unyap-debug[data-state="running"] .unyap-debug-progress::after { animation: none; }
+}
