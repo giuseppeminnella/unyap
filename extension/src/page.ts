@@ -199,18 +199,15 @@ function send(videoId: string, message: CaptureMessage): void {
   document.dispatchEvent(new CustomEvent(CAPTURE_EVENT, { detail: JSON.stringify(message) }));
 }
 
-/**
- * The final message for this video, or null when there is nothing to say (live stream, premiere). While it waits for
- * the player's caption token it sends one "waiting" message.
- */
-async function capture(videoId: string, deadline: number): Promise<CaptureMessage | null> {
+/** The final message for this video. While it waits for the player's caption token it sends one "waiting" message. */
+async function capture(videoId: string, deadline: number): Promise<CaptureMessage> {
   const tokenUntil = Math.min(Date.now() + TOKEN_WAIT_MS, deadline);
   const ready = await waitFor(videoId, deadline, () => readyPlayer(videoId));
   if (ready === null) return { type: "capture-failed", videoId };
   const { player, response } = ready;
   const details = response.videoDetails ?? {};
   const lengthSeconds = Number(details.lengthSeconds);
-  if (!(lengthSeconds >= 1)) return null;
+  if (!(lengthSeconds >= 1)) return { type: "unsupported", videoId };
   if (isPrivateOrUnlisted(response)) return { type: "not-public", videoId };
   const track = chooseTrack(response.captions?.playerCaptionsTracklistRenderer ?? {});
   if (track === null) return { type: "no-transcript", videoId };

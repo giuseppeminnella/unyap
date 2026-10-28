@@ -41,7 +41,8 @@ async function analyze(request: AnalyzeRequest, report?: (message: AnalysisPortM
   try {
     // No console log here: debug mode's overlay shows the same calls.
     const analysis = await runAnalysis(createLiveClient(settings.openaiApiKey), request, emit, () => {});
-    await putCached(chrome.storage.local, analysis, ANALYSIS_VERSION, Date.now());
+    // The analysis is paid for: a failed cache write only means the next visit asks again.
+    await putCached(chrome.storage.local, analysis, ANALYSIS_VERSION, Date.now()).catch(() => {});
     return { ok: true, analysis };
   } catch (error) {
     return failure(error);

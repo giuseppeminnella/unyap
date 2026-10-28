@@ -11,6 +11,8 @@ export type CaptureMessage =
   | { type: "capture-failed"; videoId: string }
   // Private or unlisted video: never captured or sent.
   | { type: "not-public"; videoId: string }
+  // Live stream or premiere: no fixed length to split into segments.
+  | { type: "unsupported"; videoId: string }
   // Still capturing: the player has no caption token yet. One of the messages above follows.
   | { type: "waiting"; videoId: string };
 

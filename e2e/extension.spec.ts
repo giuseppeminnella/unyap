@@ -52,6 +52,24 @@ async function launch(outputPath: string): Promise<{ context: BrowserContext; wo
   return { context, worker };
 }
 
+/** Serves every youtube.com URL as a fake watch page whose player answers getPlayerResponse with `response` (JS). */
+async function routeWatchPage(context: BrowserContext, response: string): Promise<void> {
+  await context.route("https://www.youtube.com/**", (route) => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><html><head><style>
+      body { margin: 40px; background: #edf0f2; }
+      #movie_player { position: relative; width: 960px; height: 540px; background: #172029; }
+      video { width: 100%; height: 100%; }
+      .ytp-chrome-bottom { position: absolute; bottom: 0; left: 12px; right: 12px; height: 42px; }
+      .ytp-progress-bar-container { position: relative; height: 6px; background: #777; }
+    </style></head><body><div id="movie_player" tabindex="0"><video></video>
+      <div class="ytp-chrome-bottom"><div class="ytp-progress-bar-container"></div></div>
+    </div><script>
+      document.querySelector("#movie_player").getPlayerResponse = () => ${response};
+    </script></body></html>`,
+  }));
+}
+
 test("the extension analyzes with the viewer's own key and caches locally", async ({}, info) => {
   const { context, worker } = await launch(info.outputPath("profile"));
   try {
@@ -106,6 +124,12 @@ test("the extension analyzes with the viewer's own key and caches locally", asyn
       chrome.runtime.sendMessage({ type: "cached", videoId }), e2eEggVideo.videoId);
     expect(miss.analysis).toBeNull();
     expect(await worker.evaluate(() => chrome.storage.local.get("openaiApiKey"))).toEqual({ openaiApiKey: KEY });
+
+    // Emptying the field and saving removes the key.
+    await key.fill("");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.locator("#unyap-saved")).toHaveText("Key removed. Unyap analyzes nothing until you add one.");
+    expect(await worker.evaluate(() => chrome.storage.local.get("openaiApiKey"))).toEqual({ openaiApiKey: "" });
   } finally {
     await context.close();
   }
@@ -118,31 +142,24 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
     const request = { ...e2eEggVideo, videoId: randomBytes(8).toString("base64url") };
     await fakeOpenAi(worker, await mockAnswers(request), true);
 
-    await context.route("https://www.youtube.com/**", (route) => route.fulfill({
-      contentType: "text/html",
-      body: `<!doctype html><html><head><style>
-        body { margin: 40px; background: #edf0f2; }
-        #movie_player { position: relative; width: 960px; height: 540px; background: #172029; }
-        video { width: 100%; height: 100%; }
-        .ytp-chrome-bottom { position: absolute; bottom: 0; left: 12px; right: 12px; height: 42px; }
-        .ytp-progress-bar-container { position: relative; height: 6px; background: #777; }
-      </style></head><body><div id="movie_player" tabindex="0"><video></video>
-        <div class="ytp-chrome-bottom"><div class="ytp-progress-bar-container"></div></div>
-      </div><script>
-        document.querySelector("#movie_player").getPlayerResponse = () => ({
-          videoDetails: { videoId: new URL(location.href).searchParams.get("v"), lengthSeconds: "0" }
-        });
-      </script></body></html>`,
-    }));
+    // This player never reports the video as loaded, so page.ts keeps waiting and the test hands over the transcript.
+    await routeWatchPage(context, `({ videoDetails: { videoId: "not-this-one" } })`);
     const page = await context.newPage();
     await page.goto(`https://www.youtube.com/watch?v=${request.videoId}`);
+
+    // A transcript nobody asked for is ignored: no analysis, the offer stays.
+    const dispatchTranscript = () => page.evaluate(({ request, name }) => {
+      document.dispatchEvent(new CustomEvent(name, { detail: JSON.stringify({ type: "transcript", request }) }));
+    }, { request, name: CAPTURE_EVENT });
+    await expect(page.getByRole("button", { name: "Unyap this video" })).toBeVisible();
+    await dispatchTranscript();
+    await expect(page.getByRole("button", { name: "Unyap this video" })).toBeVisible();
+    expect(await worker.evaluate(() => (globalThis as typeof globalThis & { calls?: number }).calls ?? 0)).toBe(0);
 
     // Nothing is captured until the viewer asks; the fixture player has no captions, so the test hands over the transcript.
     await page.getByRole("button", { name: "Unyap this video" }).click();
     await expect(page.locator(".unyap-note-text")).toHaveText("Unyap: analyzing…");
-    await page.evaluate(({ request, name }) => {
-      document.dispatchEvent(new CustomEvent(name, { detail: JSON.stringify({ type: "transcript", request }) }));
-    }, { request, name: CAPTURE_EVENT });
+    await dispatchTranscript();
 
     const panel = page.getByRole("region", { name: "Unyap debug mode" });
     await expect(panel).toBeVisible();
@@ -158,6 +175,48 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
     await expect(page.getByRole("button", { name: /^Unyap it/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "Unyap this video" })).toHaveCount(0);
     expect(await worker.evaluate(() => (globalThis as typeof globalThis & { calls?: number }).calls)).toBe(2);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a live stream or premiere says it is not supported instead of analyzing forever", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    await worker.evaluate((key) => chrome.storage.local.set({ openaiApiKey: key }), KEY);
+    await routeWatchPage(context, `({ videoDetails: { videoId: new URL(location.href).searchParams.get("v"), lengthSeconds: "0" } })`);
+    const page = await context.newPage();
+    await page.goto(`https://www.youtube.com/watch?v=${randomBytes(8).toString("base64url")}`);
+
+    await page.getByRole("button", { name: "Unyap this video" }).click();
+    await expect(page.locator(".unyap-note-text")).toHaveText("Unyap: live streams and premieres aren't supported.");
+  } finally {
+    await context.close();
+  }
+});
+
+test("an analysis that could not be cached is still shown", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    await worker.evaluate((key) => chrome.storage.local.set({ openaiApiKey: key }), KEY);
+    await fakeOpenAi(worker, await mockAnswers(e2eEggVideo));
+    // Every cache write fails, as on a full or broken profile.
+    await worker.evaluate(() => {
+      const area = chrome.storage.local;
+      const set = area.set.bind(area);
+      area.set = ((items: Record<string, unknown>) => Object.keys(items).some((key) => key.startsWith("analysis:"))
+        ? Promise.reject(new Error("storage write failed"))
+        : set(items)) as typeof area.set;
+    });
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+
+    const response: AnalyzeResponse = await page.evaluate((request) =>
+      chrome.runtime.sendMessage({ type: "analyze", request }), e2eEggVideo);
+    expect(response).toMatchObject({ ok: true, analysis: { videoId: e2eEggVideo.videoId } });
+    const miss: CachedResponse = await page.evaluate((videoId) =>
+      chrome.runtime.sendMessage({ type: "cached", videoId }), e2eEggVideo.videoId);
+    expect(miss.analysis).toBeNull();
   } finally {
     await context.close();
   }

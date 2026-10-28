@@ -1,9 +1,10 @@
 // Options page: the viewer's OpenAI API key, the on-demand/automatic switch, debug mode and the local cache.
 import { clearCache } from "./lib/local-cache.ts";
-import { DEFAULT_SETTINGS, normalizeApiKey, type Settings } from "./lib/settings.ts";
+import { apiKeyToSave, DEFAULT_SETTINGS, type Settings } from "./lib/settings.ts";
 
 const INVALID_KEY = "Paste an OpenAI API key: it starts with sk-.";
 const SAVED = "Saved. Reload the YouTube tab to apply.";
+const REMOVED = "Key removed. Unyap analyzes nothing until you add one.";
 
 const form = document.querySelector<HTMLFormElement>("#unyap-form");
 const apiKey = document.querySelector<HTMLInputElement>("#unyap-api-key");
@@ -24,7 +25,7 @@ if (form && apiKey && debugMode && autoAnalyze && keyError && saved) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     saved.textContent = "";
-    const key = normalizeApiKey(apiKey.value);
+    const key = apiKeyToSave(apiKey.value);
     if (key === null) {
       keyError.textContent = INVALID_KEY;
       apiKey.setAttribute("aria-invalid", "true");
@@ -36,7 +37,7 @@ if (form && apiKey && debugMode && autoAnalyze && keyError && saved) {
     const settings: Settings = { openaiApiKey: key, debugMode: debugMode.checked, autoAnalyze: autoAnalyze.checked };
     void chrome.storage.local.set(settings).then(() => {
       apiKey.value = key;
-      saved.textContent = SAVED;
+      saved.textContent = key === "" ? REMOVED : SAVED;
     });
   });
 }

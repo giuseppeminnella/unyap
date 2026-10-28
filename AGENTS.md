@@ -179,7 +179,9 @@ browser on youtube.com can fetch transcripts.
   and shows it at once (and tells `page.ts` to skip the capture). Otherwise it
   shows "Unyap this video"; a click (or "Analyze every video automatically",
   `autoAnalyze`, default off) sends `unyap:start-capture` to `page.ts`, which
-  captures only on request.
+  captures only on request. `content.ts` ignores capture
+  messages until it has asked for one, so another script cannot start an analysis without the viewer's click
+  (or auto mode).
 - UI on a watch page: a thin strip just above the progress bar, one block per
   segment coloured by substance, a marker at the payoff; an "Unyap it
   · 12:41" button that sets `video.currentTime`; "Title never delivered" when
@@ -196,7 +198,7 @@ browser on youtube.com can fetch transcripts.
 - Private and unlisted videos are never captured or sent: when the player
   response has `videoDetails.isPrivate` or
   `microformat.playerMicroformatRenderer.isUnlisted` set to `true`, the pill
-  shows the skipped status instead.
+  shows the skipped status instead. Live streams and premieres (no length yet) say they are not supported.
 - Entries: `page.ts` runs in the `MAIN` world (captures the transcript through
   `#movie_player`, no `chrome.*`), `content.ts` in the isolated world (draws the
   UI, messages the service worker), `background.ts` is the service worker (OpenAI
