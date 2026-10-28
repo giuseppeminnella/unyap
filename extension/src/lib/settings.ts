@@ -15,3 +15,8 @@ export function normalizeApiKey(input: string): string | null {
   const key = input.trim();
   return /^sk-[A-Za-z0-9_-]{20,}$/.test(key) ? key : null;
 }
+
+/** What Save stores from the key field: "" for an empty field (removes the key), null when it isn't a key. */
+export function apiKeyToSave(input: string): string | null {
+  return input.trim() === "" ? "" : normalizeApiKey(input);
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_SETTINGS, normalizeApiKey } from "./settings.ts";
+import { apiKeyToSave, DEFAULT_SETTINGS, normalizeApiKey } from "./settings.ts";
 
 describe("DEFAULT_SETTINGS", () => {
   it("starts without a key, in on-demand mode", () => {
@@ -17,4 +17,16 @@ describe("normalizeApiKey", () => {
   for (const input of ["", "sk-short", "pk-abcdefghijklmnopqrstuvwxyz", "sk-abc def ghi jkl mno pqr stu", "hello"]) {
     it(`rejects ${JSON.stringify(input)}`, () => assert.equal(normalizeApiKey(input), null));
   }
+});
+
+describe("apiKeyToSave", () => {
+  it("saves an empty field as no key, so the viewer can remove theirs", () => {
+    assert.equal(apiKeyToSave(""), "");
+    assert.equal(apiKeyToSave("   "), "");
+  });
+
+  it("saves a valid key trimmed and refuses anything else", () => {
+    assert.equal(apiKeyToSave(" sk-abcdefghijklmnopqrstuvwxyz "), "sk-abcdefghijklmnopqrstuvwxyz");
+    assert.equal(apiKeyToSave("not a key"), null);
+  });
 });

@@ -106,6 +106,12 @@ test("the extension analyzes with the viewer's own key and caches locally", asyn
       chrome.runtime.sendMessage({ type: "cached", videoId }), e2eEggVideo.videoId);
     expect(miss.analysis).toBeNull();
     expect(await worker.evaluate(() => chrome.storage.local.get("openaiApiKey"))).toEqual({ openaiApiKey: KEY });
+
+    // Emptying the field and saving removes the key.
+    await key.fill("");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.locator("#unyap-saved")).toHaveText("Key removed. Unyap analyzes nothing until you add one.");
+    expect(await worker.evaluate(() => chrome.storage.local.get("openaiApiKey"))).toEqual({ openaiApiKey: "" });
   } finally {
     await context.close();
   }
