@@ -112,7 +112,11 @@ function button(text: string, className: string, onClick: (event: MouseEvent) =>
   node.type = "button";
   node.className = className;
   node.textContent = text;
-  node.addEventListener("click", onClick);
+  // Page scripts share this DOM and can call click(): only a real viewer click may spend the viewer's API key.
+  node.addEventListener("click", (event) => {
+    if (!event.isTrusted) return;
+    onClick(event);
+  });
   return node;
 }
 

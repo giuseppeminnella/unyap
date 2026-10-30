@@ -184,6 +184,28 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
   }
 });
 
+test("a click dispatched by a page script does not start an analysis", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    await worker.evaluate((key) => chrome.storage.local.set({ openaiApiKey: key }), KEY);
+    const request = { ...e2eEggVideo, videoId: randomBytes(8).toString("base64url") };
+    await fakeOpenAi(worker, await mockAnswers(request));
+    await routeWatchPage(context, `({ videoDetails: { videoId: "not-this-one" } })`);
+
+    const page = await context.newPage();
+    await page.goto(`https://www.youtube.com/watch?v=${request.videoId}`);
+    const offer = page.getByRole("button", { name: "Unyap this video" });
+    await expect(offer).toBeVisible();
+
+    // The page can call click() on the button, but the resulting event is not trusted: the offer must stay.
+    await page.evaluate(() => document.querySelector<HTMLButtonElement>(".unyap-jump")?.click());
+    await expect(offer).toBeVisible();
+    expect(await worker.evaluate(() => (globalThis as typeof globalThis & { calls?: number }).calls ?? 0)).toBe(0);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a live stream or premiere says it is not supported instead of analyzing forever", async ({}, info) => {
   const { context, worker } = await launch(info.outputPath("profile"));
   try {
