@@ -256,7 +256,18 @@ describe("isPrivateOrUnlisted", () => {
     assert.equal(isPrivateOrUnlisted({ videoDetails: { videoId: VIDEO } }), false);
   });
 
-  it('is false for isPrivate "true"', () => assert.equal(isPrivateOrUnlisted(response("true", false)), false));
+  it("fails closed when a flag is not a known false value", () => {
+    for (const value of [true, "true", 1, 2, {}, null]) {
+      assert.equal(isPrivateOrUnlisted(response(value, false)), true);
+      assert.equal(isPrivateOrUnlisted(response(false, value)), true);
+    }
+  });
+
+  it('is false for the known public values false, "false" and 0', () => {
+    for (const value of [false, "false", 0]) {
+      assert.equal(isPrivateOrUnlisted(response(value, value)), false);
+    }
+  });
 
   it("is false for null", () => assert.equal(isPrivateOrUnlisted(null), false));
 });
