@@ -14,7 +14,7 @@ public repo giuseppeminnella/giuseppe.dev; privacy and terms are `noindex`).
 
 ```
 pipeline/      the analysis pipeline the extension bundles (analysis, decisions, segments, guards) and its tests
-shared/        types.ts (shared types), timeline.ts (pure UI helpers), *.test.ts
+shared/        types.ts (shared types), validate.ts (AnalyzeRequest bounds), timeline.ts (pure UI helpers), *.test.ts
 extension/     Chrome MV3 extension: src/*.ts entries (bundled to dist/*.js), src/lib/ helpers and their tests
                (not entries), static/ (manifest, options page, stylesheet, icons), icon.svg (icon source)
 scripts/       build.ts (esbuild bundles), icons.ts (PNG icons from icon.svg), package.ts + zip.ts (store zip)
@@ -193,8 +193,12 @@ browser on youtube.com can fetch transcripts.
   shows "Unyap this video"; a click (or "Analyze every video automatically",
   `autoAnalyze`, default off) sends `unyap:start-capture` to `page.ts`, which
   captures only on request. `content.ts` ignores capture
-  messages until it has asked for one, so another script cannot start an analysis without the viewer's click
-  (or auto mode).
+  messages until it has asked for one, and its buttons accept only `isTrusted`
+  clicks, so a page script cannot start an analysis without the viewer's click
+  (or auto mode). The worker parses every request with `shared/validate.ts`,
+  caps what it can send, and accepts only its own pages or the content script on
+  a watch page for the video in that tab. A page script can still send a
+  request after a real click; the caps bound what it can cost.
 - UI on a watch page: a thin strip just above the progress bar, one block per
   segment coloured by substance, a marker at the payoff; an "Unyap it
   · 12:41" button that sets `video.currentTime`; "Title never delivered" when
@@ -209,8 +213,9 @@ browser on youtube.com can fetch transcripts.
   Never leave captions switched on if the user had them off, and never leave a
   different caption track selected than the user's.
 - Private and unlisted videos are never captured or sent: when the player
-  response has `videoDetails.isPrivate` or
-  `microformat.playerMicroformatRenderer.isUnlisted` set to `true`, the pill
+  response marks `videoDetails.isPrivate` or
+  `microformat.playerMicroformatRenderer.isUnlisted` with anything but a known
+  public value (`false`, `"false"` or `0`; a missing field is public), the pill
   shows the skipped status instead. Live streams and premieres (no length yet) say they are not supported.
 - Entries: `page.ts` runs in the `MAIN` world (captures the transcript through
   `#movie_player`, no `chrome.*`), `content.ts` in the isolated world (draws the
