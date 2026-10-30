@@ -247,6 +247,8 @@ browser on youtube.com can fetch transcripts.
   mock runs and failed/skipped refinements explicitly. It opens only for a new
   analysis: a cached result shows without the panel. Progress is
   batch-based (up to two API requests), and the display persists after completion.
+  The header has minimize and close buttons: minimizing keeps only the header,
+  closing hides the panel until the next analysis. A retry starts a fresh panel.
   Navigation removes the panel and disconnects its port. Save and refresh the
   YouTube tab after changing the option.
 - `page.ts` hands the capture to `content.ts` with the `unyap:capture`
