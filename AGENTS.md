@@ -167,7 +167,10 @@ browser on youtube.com can fetch transcripts.
   provider in the options page (`provider`, default `openai`) and pastes their
   own key: `openaiApiKey` (checked by `normalizeApiKey`) or `openrouterApiKey`
   (`normalizeOpenRouterKey`) plus `openrouterModel`, one of the pinned
-  `OPENROUTER_MODELS` in `src/lib/settings.ts` (never a `~` alias). The service
+  `OPENROUTER_MODELS` in `src/lib/settings.ts` (never a `~` alias). Both keys are
+  stored independently: saving one provider leaves the other key untouched
+  (`settingsWithKey` copies it from storage), and an empty field removes only the
+  active provider's key. The service
   worker runs the analysis itself (`runAnalysis` from `pipeline/analysis.ts`,
   with `createLiveClient` from `pipeline/decisions.ts` or
   `createOpenRouterClient` from `pipeline/openrouter.ts`, bundled by esbuild),

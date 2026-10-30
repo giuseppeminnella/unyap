@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   apiKeyToSave, DEFAULT_SETTINGS, normalizeApiKey, normalizeOpenRouterKey, OPENROUTER_MODELS, openRouterModelOf,
-  providerOf,
+  providerOf, settingsWithKey, type Settings,
 } from "./settings.ts";
 
 const OPENROUTER_KEY = "sk-or-v1-0123456789abcdef0123456789abcdef";
@@ -70,5 +70,47 @@ describe("apiKeyToSave", () => {
     assert.equal(apiKeyToSave(OPENROUTER_KEY, "openrouter"), OPENROUTER_KEY);
     assert.equal(apiKeyToSave(OPENROUTER_KEY, "openai"), null);
     assert.equal(apiKeyToSave("  ", "openrouter"), "");
+  });
+});
+
+describe("settingsWithKey", () => {
+  const OPENAI_KEY = "sk-abcdefghijklmnopqrstuvwxyz";
+  const stored: Settings = {
+    ...DEFAULT_SETTINGS,
+    openaiApiKey: OPENAI_KEY,
+    openrouterApiKey: OPENROUTER_KEY,
+  };
+
+  it("saves the active key and keeps the other provider's key", () => {
+    const settings = settingsWithKey(stored, "openrouter", "sk-or-v1-new-key-0123456789abcdef", "typesafe/jev-1.14", true, true);
+    assert.deepEqual(settings, {
+      provider: "openrouter",
+      openaiApiKey: OPENAI_KEY,
+      openrouterApiKey: "sk-or-v1-new-key-0123456789abcdef",
+      openrouterModel: "typesafe/jev-1.14",
+      debugMode: true,
+      autoAnalyze: true,
+    });
+  });
+
+  it("keeps the OpenRouter key when saving OpenAI", () => {
+    const settings = settingsWithKey(stored, "openai", OPENAI_KEY, "typesafe/jev-1.14", false, false);
+    assert.equal(settings.openaiApiKey, OPENAI_KEY);
+    assert.equal(settings.openrouterApiKey, OPENROUTER_KEY);
+  });
+
+  it("removes only the active provider's key when its field is empty", () => {
+    const openaiRemoved = settingsWithKey(stored, "openai", "", "", false, false);
+    assert.equal(openaiRemoved.openaiApiKey, "");
+    assert.equal(openaiRemoved.openrouterApiKey, OPENROUTER_KEY);
+
+    const openrouterRemoved = settingsWithKey(stored, "openrouter", "", "", false, false);
+    assert.equal(openrouterRemoved.openaiApiKey, OPENAI_KEY);
+    assert.equal(openrouterRemoved.openrouterApiKey, "");
+  });
+
+  it("falls back to the default model for an unknown model", () => {
+    const settings = settingsWithKey(stored, "openai", OPENAI_KEY, "~typesafe/jev-latest", false, false);
+    assert.equal(settings.openrouterModel, "openai/gpt-6-luna-decisions");
   });
 });

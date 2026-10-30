@@ -3,7 +3,7 @@
 import { clearCache } from "./lib/local-cache.ts";
 import {
   apiKeyToSave, DEFAULT_SETTINGS, normalizeOpenRouterKey, OPENROUTER_MODELS, OPENROUTER_ORIGIN, openRouterModelOf,
-  type Provider, providerOf, type Settings,
+  type Provider, providerOf, type Settings, settingsWithKey,
 } from "./lib/settings.ts";
 
 const INVALID_KEY: Record<Provider, string> = {
@@ -65,11 +65,17 @@ if (form && keys.openai && keys.openrouter && model && debugMode && autoAnalyze 
   const openaiKey = keys.openai;
   const openrouterKey = keys.openrouter;
   for (const option of OPENROUTER_MODELS) model.append(new Option(option.label, option.id));
-  // What is stored: a key typed into the hidden section is only saved once it is valid.
-  let stored: Settings = DEFAULT_SETTINGS;
+
+  // The form stays disabled until the stored settings are on screen, so a fast save cannot overwrite them.
+  const controls = form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
+    "input, select, button",
+  );
+  const setControlsDisabled = (disabled: boolean): void => {
+    for (const control of controls) control.disabled = disabled;
+  };
+  setControlsDisabled(true);
 
   void chrome.storage.local.get<Settings>(DEFAULT_SETTINGS).then((settings) => {
-    stored = settings;
     const provider = providerOf(settings);
     const radio = document.querySelector<HTMLInputElement>(`input[name="provider"][value="${provider}"]`);
     if (radio) radio.checked = true;
@@ -79,6 +85,10 @@ if (form && keys.openai && keys.openrouter && model && debugMode && autoAnalyze 
     model.value = openRouterModelOf(settings);
     debugMode.checked = settings.debugMode === true;
     autoAnalyze.checked = settings.autoAnalyze === true;
+    setControlsDisabled(false);
+  }, () => {
+    saved.textContent = "Could not load your settings. Reload the page.";
+    setControlsDisabled(false);
   });
 
   form.addEventListener("change", (event) => {
@@ -99,16 +109,6 @@ if (form && keys.openai && keys.openrouter && model && debugMode && autoAnalyze 
       return;
     }
     setError(provider, "");
-    const otherKey = apiKeyToSave(keys[other]?.value ?? "", other)
-      ?? (other === "openai" ? stored.openaiApiKey : stored.openrouterApiKey);
-    const settings: Settings = {
-      provider,
-      openaiApiKey: provider === "openai" ? key : otherKey,
-      openrouterApiKey: provider === "openrouter" ? key : otherKey,
-      openrouterModel: openRouterModelOf({ openrouterModel: model.value }),
-      debugMode: debugMode.checked,
-      autoAnalyze: autoAnalyze.checked,
-    };
     // Chrome grants the permission only inside the click, so ask before anything awaits.
     const allowed = provider === "openrouter" && key !== ""
       ? chrome.permissions.request({ origins: [OPENROUTER_ORIGIN] })
@@ -118,11 +118,16 @@ if (form && keys.openai && keys.openrouter && model && debugMode && autoAnalyze 
         setError(provider, NO_PERMISSION);
         return;
       }
+      // Read the current keys at save time: the other provider's key is copied from storage, never from the hidden
+      // field. Only the active provider's key can be added or removed by this save.
+      const current = await chrome.storage.local.get<Settings>(DEFAULT_SETTINGS);
+      const settings = settingsWithKey(current, provider, key, model.value, debugMode.checked, autoAnalyze.checked);
       await chrome.storage.local.set(settings);
-      stored = settings;
       openaiKey.value = settings.openaiApiKey;
       openrouterKey.value = settings.openrouterApiKey;
       saved.textContent = key === "" ? REMOVED : SAVED;
+    }).catch(() => {
+      saved.textContent = "Could not save your settings. Try again.";
     });
   });
 }

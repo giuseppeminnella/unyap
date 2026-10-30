@@ -66,6 +66,28 @@ export function apiKeyToSave(input: string, provider: Provider = "openai"): stri
   return provider === "openai" ? normalizeApiKey(input) : normalizeOpenRouterKey(input);
 }
 
+/**
+ * The settings after saving the active provider's key and the shared options. The other provider's key is copied from
+ * `stored` unchanged, so switching providers never clears it: only the active provider's key can be added or removed.
+ */
+export function settingsWithKey(
+  stored: Settings,
+  provider: Provider,
+  key: string,
+  model: string,
+  debugMode: boolean,
+  autoAnalyze: boolean,
+): Settings {
+  return {
+    provider,
+    openaiApiKey: provider === "openai" ? key : stored.openaiApiKey,
+    openrouterApiKey: provider === "openrouter" ? key : stored.openrouterApiKey,
+    openrouterModel: openRouterModelOf({ openrouterModel: model }),
+    debugMode,
+    autoAnalyze,
+  };
+}
+
 /** The stored provider, or OpenAI for anything else (settings saved before providers existed). */
 export function providerOf(settings: Partial<Settings>): Provider {
   return settings.provider === "openrouter" ? "openrouter" : "openai";
