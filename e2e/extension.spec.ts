@@ -425,3 +425,55 @@ test("switching providers keeps both keys", async ({}, info) => {
     await context.close();
   }
 });
+
+test("the pill picks an OpenRouter model, retries, and shows an inline error", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    await worker.evaluate(({ openaiKey, openrouterKey }) => chrome.storage.local.set({
+      provider: "openrouter",
+      openaiApiKey: openaiKey,
+      openrouterApiKey: openrouterKey,
+      openrouterModel: "openai/gpt-6-luna-decisions",
+    }), { openaiKey: KEY, openrouterKey: OPENROUTER_KEY });
+    await worker.evaluate(() => {
+      chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
+      globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: "invalid_api_key" } }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const request = { ...e2eEggVideo, videoId: randomBytes(8).toString("base64url") };
+    await routeWatchPage(context, `({ videoDetails: { videoId: "not-this-one" } })`);
+    const page = await context.newPage();
+    await page.goto(`https://www.youtube.com/watch?v=${request.videoId}`);
+
+    const offer = page.getByRole("button", { name: "Unyap this video" });
+    const retry = page.getByRole("button", { name: "Retry the analysis" });
+    const gear = page.getByRole("button", { name: "Choose the OpenRouter model" });
+    await expect(offer).toBeVisible();
+    await expect(retry).toBeVisible();
+    await expect(gear).toBeVisible();
+
+    await gear.click();
+    await expect(gear).toHaveAttribute("aria-expanded", "true");
+    const model = page.getByRole("menuitemradio", { name: "TypeSafe Jev 1.14" });
+    await expect(model).toBeVisible();
+    await model.click();
+    await expect(gear).toHaveAttribute("aria-expanded", "false");
+    expect(await worker.evaluate(() => chrome.storage.local.get("openrouterModel"))).toEqual({
+      openrouterModel: "typesafe/jev-1.14",
+    });
+
+    await offer.click();
+    await page.evaluate(({ request: captured, name }) => {
+      document.dispatchEvent(new CustomEvent(name, { detail: JSON.stringify({ type: "transcript", request: captured }) }));
+    }, { request, name: CAPTURE_EVENT });
+    await expect(page.locator(".unyap-note-text")).toHaveText("Unyap: OpenRouter rejected your API key.");
+    await expect(page.locator(".unyap-note-icon")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Unyap this video" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry the analysis" })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});

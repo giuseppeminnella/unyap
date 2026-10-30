@@ -22,8 +22,10 @@ import {
   type AnalyzeResponse,
   type CachedResponse,
   type CaptureMessage,
+  type SetModelResponse,
   type WorkerMessage,
 } from "./lib/messages.ts";
+import { OPENROUTER_MODELS, type Provider } from "./lib/settings.ts";
 
 // Every YouTube selector and event this script relies on.
 const YT = {
@@ -64,14 +66,15 @@ const TEXT = {
   notPublic: "Unyap: skipped (private or unlisted video).",
   unsupported: "Unyap: live streams and premieres aren't supported.",
   offer: "Unyap this video",
-  retry: "Try again",
+  gear: "Choose the OpenRouter model",
+  retry: "Retry the analysis",
   previous: "Previous",
   next: "Next good part",
 };
 
 type Display =
   | { kind: "analysis"; analysis: Analysis }
-  | { kind: "status"; text: string; options: boolean; dismiss: boolean; retry?: boolean }
+  | { kind: "status"; text: string; options: boolean; dismiss: boolean; error?: boolean }
   | { kind: "offer" };
 
 /** What Unyap knows about the video the URL shows. Replaced whenever that video changes. */
@@ -86,6 +89,11 @@ interface View {
   display: Display | null;
   debug: DebugOverlay | null;
   port: chrome.runtime.Port | null;
+  /** Bumped on every retry so a finish from an older port cannot revive or close the new analysis. */
+  generation: number;
+  /** From the worker's cached answer: the active provider and the OpenRouter model shown in the gear menu. */
+  provider: Provider | null;
+  openrouterModel: string | null;
 }
 
 let view: View | null = null;
@@ -93,8 +101,8 @@ let resizeObserver: ResizeObserver | null = null;
 // Removes the pill's listeners on the video along with the pill.
 let pillListeners: AbortController | null = null;
 
-function status(text: string, options = false): Display {
-  return { kind: "status", text, options, dismiss: true };
+function status(text: string, options = false, error = false): Display {
+  return { kind: "status", text, options, dismiss: true, error };
 }
 
 function analyzing(): Display {
@@ -140,7 +148,17 @@ function syncView(): void {
   const previous = view;
   view = videoId === null
     ? null
-    : { videoId, handled: false, requested: false, display: null, debug: null, port: null };
+    : {
+      videoId,
+      handled: false,
+      requested: false,
+      display: null,
+      debug: null,
+      port: null,
+      generation: 0,
+      provider: null,
+      openrouterModel: null,
+    };
   previous?.port?.disconnect();
   previous?.debug?.element.remove();
   if (view !== null) void showCached(view);
@@ -158,6 +176,10 @@ async function showCached(target: View): Promise<void> {
     // The worker is unreachable: still offer the button, the click reports the problem.
   }
   if (view !== target || target.handled) return;
+  if (response) {
+    target.provider = response.provider;
+    target.openrouterModel = response.openrouterModel;
+  }
   if (response?.analysis) {
     target.handled = true;
     document.dispatchEvent(new CustomEvent(SKIP_CAPTURE_EVENT, { detail: target.videoId }));
@@ -172,6 +194,11 @@ async function showCached(target: View): Promise<void> {
 /** Asks page.ts to capture this video's transcript; its result arrives as a capture message. */
 function startCapture(target: View): void {
   if (view !== target) return;
+  target.generation += 1;
+  if (target.port) {
+    try { target.port.disconnect(); } catch { /* already closed */ }
+    target.port = null;
+  }
   target.handled = false;
   target.requested = true;
   show(target, analyzing());
@@ -214,23 +241,127 @@ function currentMs(): number | null {
 
 type Step = (analysis: Analysis, currentMs: number) => number | null;
 
+// Material Design paths, drawn with the pill's currentColor.
+const GEAR_PATH =
+  "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 " +
+  "0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-" +
+  ".36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05." +
+  "3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03." +
+  "7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c." +
+  "22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 " +
+  "7.2Z";
+const REFRESH_PATH =
+  "M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10.07h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4" +
+  "l-2.35 2.35Z";
+const ERROR_PATH =
+  "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z";
+
+function icon(path: string): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  shape.setAttribute("d", path);
+  svg.append(shape);
+  return svg;
+}
+
+function iconButton(
+  label: string,
+  path: string,
+  className: string,
+  onClick: (event: MouseEvent) => void,
+): HTMLButtonElement {
+  const node = button("", className, onClick);
+  node.setAttribute("aria-label", label);
+  node.title = label;
+  node.append(icon(path));
+  return node;
+}
+
+/** The gear and its model menu, above the pill. Only an OpenRouter key has models to choose from. */
+function modelMenu(target: View): { gear: HTMLButtonElement; menu: HTMLElement } {
+  const menu = element("div", "unyap-model-menu");
+  menu.hidden = true;
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", "OpenRouter model");
+  const gear = iconButton(TEXT.gear, GEAR_PATH, "unyap-tool", () => {
+    menu.hidden = !menu.hidden;
+    gear.setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  gear.setAttribute("aria-haspopup", "menu");
+  gear.setAttribute("aria-expanded", "false");
+  for (const model of OPENROUTER_MODELS) {
+    const option = button(model.label, "unyap-model-option", () => {
+      void chooseModel(target, model.id, gear, menu);
+    });
+    option.dataset.model = model.id;
+    option.setAttribute("role", "menuitemradio");
+    option.setAttribute("aria-checked", String(model.id === target.openrouterModel));
+    menu.append(option);
+  }
+  return { gear, menu };
+}
+
+async function chooseModel(
+  target: View,
+  model: string,
+  gear: HTMLButtonElement,
+  menu: HTMLElement,
+): Promise<void> {
+  try {
+    const response = (await sendToWorker({ type: "set-model", model })) as SetModelResponse | null;
+    if (!response?.ok) return;
+    target.openrouterModel = response.model;
+    for (const option of menu.querySelectorAll<HTMLElement>(".unyap-model-option")) {
+      option.setAttribute("aria-checked", String(option.dataset.model === response.model));
+    }
+    menu.hidden = true;
+    gear.setAttribute("aria-expanded", "false");
+  } catch {
+    // Keep the picker open: the next retry reports whether the provider is reachable.
+  }
+}
+
+function buildTools(target: View, retry: (event: MouseEvent) => void): HTMLElement[] {
+  const tools: HTMLElement[] = [];
+  if (target.provider === "openrouter") {
+    const { gear, menu } = modelMenu(target);
+    tools.push(gear, menu);
+  }
+  tools.push(iconButton(TEXT.retry, REFRESH_PATH, "unyap-tool", retry));
+  return tools;
+}
+
 function buildPill(target: View, display: Display, signal: AbortSignal): HTMLElement {
   const pill = element("div", "unyap-pill");
   for (const type of CONTAINED_EVENTS) pill.addEventListener(type, (event) => event.stopPropagation());
 
+  // After a pointer click, focus goes back to the player so YouTube's keys keep working.
+  const retry = (event: MouseEvent): void => {
+    startCapture(target);
+    if (event.detail > 0) document.querySelector<HTMLElement>(YT.player)?.focus({ preventScroll: true });
+  };
+  const tools = buildTools(target, retry);
+
   if (display.kind === "offer") {
-    // After a pointer click, focus goes back to the player so YouTube's keys keep working.
-    pill.append(button(TEXT.offer, "unyap-jump", (event) => {
-      startCapture(target);
-      if (event.detail > 0) document.querySelector<HTMLElement>(YT.player)?.focus({ preventScroll: true });
-    }));
+    pill.append(...tools, button(TEXT.offer, "unyap-jump", retry));
     return pill;
   }
 
   if (display.kind === "status") {
     const note = element("div", "unyap-note");
-    note.setAttribute("role", "status");
+    note.setAttribute("role", display.error ? "alert" : "status");
+    if (display.error) {
+      const badge = element("span", "unyap-note-icon");
+      badge.setAttribute("aria-hidden", "true");
+      badge.append(icon(ERROR_PATH));
+      note.append(badge);
+    }
     note.append(element("span", "unyap-note-text", display.text));
+    note.title = display.text;
     if (display.options) {
       note.append(
         button("Options", "unyap-note-button", () => {
@@ -238,13 +369,17 @@ function buildPill(target: View, display: Display, signal: AbortSignal): HTMLEle
         }),
       );
     }
-    if (display.retry) note.append(button(TEXT.retry, "unyap-note-button", () => startCapture(target)));
     if (display.dismiss) {
       const dismiss = button("×", "unyap-note-dismiss", () => show(target, null));
       dismiss.setAttribute("aria-label", "Dismiss");
       note.append(dismiss);
     }
-    pill.append(note);
+    // "Analyzing" has no action of its own; the refresh icon above it is the retry.
+    if (display.text === TEXT.analyzing) {
+      pill.append(...tools, note);
+    } else {
+      pill.append(...tools, button(TEXT.offer, "unyap-jump", retry), note);
+    }
     return pill;
   }
 
@@ -276,12 +411,12 @@ function buildPill(target: View, display: Display, signal: AbortSignal): HTMLEle
   if (result === "never-delivered" || payoff === null) {
     const note = element("div", "unyap-note");
     note.append(element("span", "unyap-note-text", "Title never delivered"));
-    pill.append(note);
+    pill.append(...tools, note);
   } else {
     const label = result === "uncertain" ? "Unyap it?" : "Unyap it";
     jump = button(`${label} · ${formatTime(payoff.startMs)}`, "unyap-jump", () => seekFromPill(payoff.startMs));
     if (result === "uncertain") jump.title = "Not sure this is the point";
-    pill.append(jump);
+    pill.append(...tools, jump);
   }
 
   if (!sections(analysis).some((section) => section.level === "substance")) return pill;
@@ -342,19 +477,19 @@ function render(): void {
 }
 
 function responseDisplay(response: AnalyzeResponse | undefined): Display {
-  if (response === undefined) return status(TEXT.stopped);
+  if (response === undefined) return status(TEXT.stopped, false, true);
   if (response.ok) return { kind: "analysis", analysis: response.analysis };
   switch (response.reason) {
     case "settings":
-      return status(TEXT.settings(response.provider), true);
+      return status(TEXT.settings(response.provider), true, true);
     case "auth":
-      return status(TEXT.auth(response.provider), true);
+      return status(TEXT.auth(response.provider), true, true);
     case "network":
-      return status(TEXT.network(response.provider));
+      return status(TEXT.network(response.provider), false, true);
     case "permission":
-      return status(TEXT.permission, true);
+      return status(TEXT.permission, true, true);
     case "failed":
-      return status(`Unyap: ${response.message}`);
+      return status(`Unyap: ${response.message}`, false, true);
   }
 }
 
@@ -367,20 +502,21 @@ function analyze(target: View, request: AnalyzeRequest): void {
     return;
   }
   target.port = port;
+  const generation = target.generation;
   let finished = false;
   const finish = (response: AnalyzeResponse | undefined) => {
-    if (finished) return;
+    if (finished || target.generation !== generation) return;
     finished = true;
-    target.port = null;
+    if (target.port === port) target.port = null;
     if (view === target) {
       const display = responseDisplay(response);
       target.debug?.finish(response?.ok ? response.analysis : null, display.kind === "status" ? display.text : undefined);
       show(target, display);
     }
-    port.disconnect();
+    try { port.disconnect(); } catch { /* already closed */ }
   };
   port.onMessage.addListener((message: AnalysisPortMessage) => {
-    if (view !== target || finished) return;
+    if (view !== target || finished || target.generation !== generation) return;
     if (message.type === "debug" && message.enabled) {
       target.debug = new DebugOverlay();
       for (const type of CONTAINED_EVENTS) {
@@ -442,7 +578,7 @@ function onCapture(event: Event): void {
   target.handled = true;
 
   if (message.type === "no-transcript") show(target, status(TEXT.noTranscript));
-  else if (message.type === "capture-failed") show(target, { kind: "status", text: TEXT.captureFailed, options: false, dismiss: true, retry: true });
+  else if (message.type === "capture-failed") show(target, status(TEXT.captureFailed, false, true));
   else if (message.type === "not-public") show(target, status(TEXT.notPublic));
   else if (message.type === "unsupported") show(target, status(TEXT.unsupported));
   else {

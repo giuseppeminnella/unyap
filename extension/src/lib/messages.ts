@@ -1,6 +1,7 @@
 // What the extension's scripts say to each other: page.ts → content.ts through a CustomEvent on `document`,
 // content.ts → background.ts through chrome.runtime messages.
 import type { Analysis, AnalysisProgress, AnalyzeRequest } from "../../../shared/types.ts";
+import type { Provider } from "./settings.ts";
 
 /** Dispatched by page.ts on `document`. Its detail is a JSON-encoded CaptureMessage: objects do not cross JS worlds. */
 export const CAPTURE_EVENT = "unyap:capture";
@@ -19,6 +20,7 @@ export type CaptureMessage =
 export type WorkerMessage =
   | { type: "analyze"; request: AnalyzeRequest }
   | { type: "cached"; videoId: string }
+  | { type: "set-model"; model: string }
   | { type: "open-options" };
 
 /** content.ts → page.ts: this video's analysis is already cached, so stop capturing it. */
@@ -33,6 +35,16 @@ export interface CachedResponse {
   analysis: Analysis | null;
   /** The "Analyze every video automatically" setting. */
   autoAnalyze: boolean;
+  /** The active provider, so the pill knows whether to offer the OpenRouter model picker. */
+  provider: Provider;
+  /** The selected OpenRouter model, shown checked in the pill's model picker. */
+  openrouterModel: string;
+}
+
+/** The service worker's answer to a `set-model` message. */
+export interface SetModelResponse {
+  ok: boolean;
+  model: string;
 }
 
 export const ANALYZE_PORT = "unyap:analysis";

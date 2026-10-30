@@ -167,10 +167,11 @@ browser on youtube.com can fetch transcripts.
   provider in the options page (`provider`, default `openai`) and pastes their
   own key: `openaiApiKey` (checked by `normalizeApiKey`) or `openrouterApiKey`
   (`normalizeOpenRouterKey`) plus `openrouterModel`, one of the pinned
-  `OPENROUTER_MODELS` in `src/lib/settings.ts` (never a `~` alias). Both keys are
-  stored independently: saving one provider leaves the other key untouched
-  (`settingsWithKey` copies it from storage), and an empty field removes only the
-  active provider's key. The service
+  `OPENROUTER_MODELS` in `src/lib/settings.ts` (never a `~` alias). The same
+  model can be changed from the pill's gear, which stores it through the worker's
+  `set-model` message. Both keys are stored independently: saving one provider
+  leaves the other key untouched (`settingsWithKey` copies it from storage), and
+  an empty field removes only the active provider's key. The service
   worker runs the analysis itself (`runAnalysis` from `pipeline/analysis.ts`,
   with `createLiveClient` from `pipeline/decisions.ts` or
   `createOpenRouterClient` from `pipeline/openrouter.ts`, bundled by esbuild),
@@ -203,9 +204,15 @@ browser on youtube.com can fetch transcripts.
   a watch page for the video in that tab. A page script can still send a
   request after a real click; the caps bound what it can cost.
 - UI on a watch page: a thin strip just above the progress bar, one block per
-  segment coloured by substance, a marker at the payoff; an "Unyap it
-  · 12:41" button that sets `video.currentTime`; "Title never delivered" when
-  `verdict()` says so. When the analysis has a substance section, "Previous"
+  segment coloured by substance, a marker at the payoff. The pill starts with a
+  gear (OpenRouter only; it opens the pinned model picker and stores the choice
+  through the worker's `set-model` message) and a refresh icon (retry from a
+  fresh capture, bypassing the cached result), then the primary "Unyap this
+  video" or "Unyap it · 12:41" button. An error puts an error icon and its text
+  after the primary; the same refresh retries it. `CachedResponse` carries
+  `provider` and `openrouterModel` so the pill knows when to show the gear.
+  The "Unyap it" button sets `video.currentTime`; "Title never delivered" shows
+  when `verdict()` says so. When the analysis has a substance section, "Previous"
   and "Next good part" buttons follow. They move between substance sections
   with `sections`, `nextSubstanceStart` and `previousSubstanceStart` from
   `shared/timeline.ts` (3 s rule: Previous restarts the current section when
