@@ -29,6 +29,35 @@ it("reports both calls in order, with counts and never the transcript", async ()
   for (const line of egg.transcript) assert.ok(!text.includes(line.text));
 });
 
+it("carries the questions and the mapped answers, but no prompt content", async () => {
+  const { events, analysis } = await trace(createMockClient());
+  const mainStart = events[1];
+  assert.ok(mainStart?.type === "call-start" && mainStart.call === "main");
+  assert.deepEqual(mainStart.detail.map((question) => question.name), [
+    "delivers", "payoff", "substance_S1", "substance_S2", "substance_S3", "substance_S4",
+  ]);
+  const refineStart = events[3];
+  assert.ok(refineStart?.type === "call-start" && refineStart.detail[0]?.name === "start");
+
+  const mainEnd = events[2];
+  assert.ok(mainEnd?.type === "call-end" && mainEnd.detail.call === "main");
+  assert.equal(mainEnd.detail.delivers, 0.9);
+  assert.equal(mainEnd.detail.payoff?.segmentIndex, 1);
+  assert.equal(mainEnd.detail.segments.length, 4);
+  assert.deepEqual(mainEnd.refusalNames, []);
+
+  const refineEnd = events[4];
+  assert.ok(refineEnd?.type === "call-end" && refineEnd.detail.call === "refine");
+  assert.equal(refineEnd.detail.startMs, analysis?.payoff?.startMs);
+  assert.match(refineEnd.detail.line ?? "", /^L\d+$/);
+
+  // The detail is wording, answers and counts: the title, description and transcript never leave the call.
+  const text = JSON.stringify(events);
+  assert.ok(!text.includes(egg.title));
+  assert.ok(!text.includes(egg.description ?? ""));
+  for (const line of egg.transcript) assert.ok(!text.includes(line.text));
+});
+
 it("reports a main-call failure and rejects", async () => {
   const { events, error } = await trace({
     ...createMockClient(),
@@ -65,6 +94,11 @@ it("reports a refused refinement as a response and keeps the coarse payoff", asy
   });
   const refinement = events.find((event) => event.type === "call-end" && event.call === "refine");
   assert.ok(refinement?.type === "call-end" && refinement.refusals === 1);
+  assert.ok(refinement?.type === "call-end" && refinement.detail.call === "refine");
+  if (refinement?.type === "call-end" && refinement.detail.call === "refine") {
+    assert.deepEqual(refinement.refusalNames, ["start"]);
+    assert.deepEqual(refinement.detail, { call: "refine", startMs: null, line: null });
+  }
   assert.ok(!events.some((event) => event.type === "call-error"));
   assert.equal(analysis?.payoff?.startMs, 30_000);
 });

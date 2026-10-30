@@ -1,7 +1,7 @@
 // The Decisions requests (prompts, questions, ANALYSIS_VERSION) and the clients that answer them.
 // See docs/decisions-api.md. Change the wording here only together with an ANALYSIS_VERSION bump.
 import { formatTime } from "../shared/timeline.ts";
-import type { AnalyzeRequest, SubstanceLevel, TranscriptLine } from "../shared/types.ts";
+import type { AnalyzeRequest, DecisionsLevel, DecisionsQuestion, SubstanceLevel, TranscriptLine } from "../shared/types.ts";
 import { collapseWhitespace, NO_SPEECH, type SegmentText } from "./segments.ts";
 import { isRecord } from "./guards.ts";
 
@@ -20,11 +20,6 @@ const PAYOFF_INSTRUCTIONS =
 const START_INSTRUCTIONS =
   "At which line does the speaker start stating the answer, verdict, result or reveal that the title promises? Pick the first line of that statement, so a viewer who starts there hears all of it.";
 
-export interface DecisionsLevel {
-  label: SubstanceLevel;
-  description: string;
-}
-
 const LEVELS: DecisionsLevel[] = [
   {
     label: "filler",
@@ -35,11 +30,6 @@ const LEVELS: DecisionsLevel[] = [
   { label: "context", description: "background or setup that leads toward the promise without delivering it" },
   { label: "substance", description: "directly delivers information, answers or results the title promises" },
 ];
-
-export type DecisionsQuestion =
-  | { type: "predicate"; name: string; instructions: string }
-  | { type: "choice"; name: string; instructions: string; choices: { value: string; description: string }[] }
-  | { type: "score"; name: string; instructions: string; levels: DecisionsLevel[] };
 
 export interface DecisionsRequest {
   model: string;

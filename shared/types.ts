@@ -63,7 +63,27 @@ export interface Analysis {
   cached: boolean;
 }
 
-/** Safe live diagnostics: counts and timings only, never prompts, transcripts or credentials. */
+/** One level of a score question: its label and what it means. */
+export interface DecisionsLevel {
+  label: SubstanceLevel;
+  description: string;
+}
+
+/** A question in a Decisions request: wording, choices and levels — never the prompt built around them. */
+export type DecisionsQuestion =
+  | { type: "predicate"; name: string; instructions: string }
+  | { type: "choice"; name: string; instructions: string; choices: { value: string; description: string }[] }
+  | { type: "score"; name: string; instructions: string; levels: DecisionsLevel[] };
+
+/** One call's mapped answers: the coarse analysis for the main call, the chosen line for the refinement. */
+export type CallAnswers =
+  | { call: "main"; delivers: number; payoff: Payoff | null; segments: Segment[] }
+  | { call: "refine"; startMs: number | null; line: string | null };
+
+/**
+ * Safe live diagnostics: the questions' wording, the mapped answers, counts and timings. Never the prompt's
+ * per-video content (title, description, transcript) or credentials.
+ */
 export type AnalysisProgress = { atMs: number } & (
   | { type: "prepared"; segments: number; plannedQuestions: number }
   | {
@@ -73,6 +93,8 @@ export type AnalysisProgress = { atMs: number } & (
     model: string;
     questions: number;
     choices: number;
+    /** The questions as asked, so debug mode can show the request in words. */
+    detail: DecisionsQuestion[];
   }
   | {
     type: "call-end";
@@ -82,6 +104,9 @@ export type AnalysisProgress = { atMs: number } & (
     inputTokens: number;
     cachedTokens: number;
     refusals: number;
+    /** Names of the refused questions, e.g. "substance_S2". */
+    refusalNames: string[];
+    detail: CallAnswers;
   }
   | { type: "call-error"; call: "main" | "refine"; error: string }
   | { type: "refine-skipped"; reason: "no-payoff" | "too-few-lines" }

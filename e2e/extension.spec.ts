@@ -174,6 +174,28 @@ test("on a watch page: Unyap this video, debug overlay, then the cached result",
     await expect(panel.locator(".unyap-debug-status")).toHaveText("READY");
     await expect(panel).not.toContainText(request.transcript[0]!.text);
 
+    // Each call's entry expands into the questions asked and the answers received, in words (no JSON, no transcript).
+    const mainRequest = panel.locator(".unyap-debug-entry", { hasText: "Main request" });
+    await mainRequest.locator("summary", { hasText: "Request" }).click();
+    await expect(mainRequest.locator(".unyap-debug-spec")).toContainText("Predicate · delivers");
+    await expect(mainRequest.locator(".unyap-debug-spec")).toContainText(
+      "Does the video, anywhere, actually deliver the specific thing its title promises",
+    );
+    await expect(mainRequest.locator(".unyap-debug-spec")).toContainText("Choice · payoff");
+    await expect(mainRequest.locator(".unyap-debug-spec")).toContainText("Score · substance_S1 … substance_S4");
+
+    const mainResponse = panel.locator(".unyap-debug-entry", { hasText: "Main response" });
+    await mainResponse.locator("summary", { hasText: "Response" }).click();
+    await expect(mainResponse.locator(".unyap-debug-spec")).toContainText("90% likely to deliver");
+    await expect(mainResponse.locator(".unyap-debug-spec")).toContainText("S2 at 0:30 · 80% confident");
+    await expect(mainResponse.locator(".unyap-debug-spec li[data-payoff]")).toContainText("S2 · 0:30–1:00 · substance · 88%");
+
+    const refinement = panel.locator(".unyap-debug-entry", { hasText: "Refinement response" });
+    await refinement.locator("summary", { hasText: "Response" }).click();
+    await expect(refinement.locator(".unyap-debug-spec")).toContainText("L3 at 0:31");
+    await expect(refinement.locator(".unyap-debug-spec")).toContainText("moves from the segment start (0:30)");
+    await expect(panel).not.toContainText(request.transcript[0]!.text);
+
     // The second visit answers from the local cache: no button, no capture, no OpenAI call.
     await page.goto(`https://www.youtube.com/watch?v=${request.videoId}`);
     await expect(page.getByRole("button", { name: /^Unyap it/ })).toBeVisible();
