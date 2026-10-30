@@ -1,6 +1,7 @@
 // The analysis pipeline: segment, ask, refine the payoff, map, log.
 import type {
-  Analysis, AnalysisProgress, AnalyzeRequest, Payoff, Segment, SubstanceLevel, TranscriptLine,
+  Analysis, AnalysisProgress, AnalyzeRequest, CallAnswers, DecisionsQuestion, Payoff, Segment, SubstanceLevel,
+  TranscriptLine,
 } from "../shared/types.ts";
 import {
   buildDecisionsRequest,
@@ -31,6 +32,8 @@ export interface MappedResponse extends CallCounts {
 export interface MappedRefinement extends CallCounts {
   /** The chosen line's startMs; null when `start` was refused. */
   startMs: number | null;
+  /** The chosen line's name, e.g. "L2"; null with startMs. */
+  line: string | null;
 }
 
 export interface CallLog {
@@ -167,8 +170,10 @@ export function mapResponse(
 export function mapRefinement(response: unknown, lines: readonly TranscriptLine[]): MappedRefinement {
   const { answer, refusals, inputTokens, cachedTokens } = readResponse(response);
   const start = answer("start", "choice");
-  const startMs = start ? (lines.find((_, i) => lineName(i) === start.choice) ?? invalid()).startMs : null;
-  return { startMs, refusals, inputTokens, cachedTokens };
+  if (!start) return { startMs: null, line: null, refusals, inputTokens, cachedTokens };
+  if (typeof start.choice !== "string") invalid();
+  const line = lines.find((_, i) => lineName(i) === start.choice) ?? invalid();
+  return { startMs: line.startMs, line: start.choice, refusals, inputTokens, cachedTokens };
 }
 
 export type ProgressListener = (event: AnalysisProgress) => void;
@@ -192,11 +197,15 @@ export async function runAnalysis(
     send: () => Promise<unknown>,
     map: (response: unknown) => T,
     emit: ProgressListener,
-    info: { call: "main" | "refine"; model: string; questions: number; choices: number },
+    info: { call: "main" | "refine"; model: string; questions: DecisionsQuestion[]; choices: number },
+    answers: (mapped: T) => CallAnswers,
   ): Promise<T> {
     const started = performance.now();
     let latencyMs = 0;
-    emit({ type: "call-start", atMs: Date.now(), mode: client.mode, ...info });
+    emit({
+      type: "call-start", atMs: Date.now(), mode: client.mode, call: info.call, model: info.model,
+      questions: info.questions.length, choices: info.choices, detail: info.questions,
+    });
     try {
       const response = await send().finally(() => {
         latencyMs = Math.round(performance.now() - started);
@@ -205,8 +214,9 @@ export async function runAnalysis(
       const { inputTokens, cachedTokens, refusals } = mapped;
       log({ ...call, latencyMs, inputTokens, cachedTokens, refusals, ok: true });
       emit({
-        type: "call-end", atMs: Date.now(), call: info.call, questions: info.questions,
-        latencyMs, inputTokens, cachedTokens, refusals: refusals.length,
+        type: "call-end", atMs: Date.now(), call: info.call, questions: info.questions.length,
+        latencyMs, inputTokens, cachedTokens, refusals: refusals.length, refusalNames: refusals,
+        detail: answers(mapped),
       });
       return mapped;
     } catch (error) {
@@ -230,7 +240,13 @@ export async function runAnalysis(
       () => client.decide(body, segments),
       (response) => mapResponse(response, request, segments),
       emit,
-      { call: "main", model: client.model ?? body.model, questions: body.questions.length, choices: segments.length + 1 },
+      { call: "main", model: client.model ?? body.model, questions: body.questions, choices: segments.length + 1 },
+      (mapped) => ({
+        call: "main",
+        delivers: mapped.analysis.delivers,
+        payoff: mapped.analysis.payoff,
+        segments: mapped.analysis.segments,
+      }),
     );
   }
 
@@ -258,7 +274,8 @@ export async function runAnalysis(
         () => client.refine(body, lines),
         (response) => mapRefinement(response, lines),
         emit,
-        { call: "refine", model: client.model ?? body.model, questions: body.questions.length, choices: lines.length },
+        { call: "refine", model: client.model ?? body.model, questions: body.questions, choices: lines.length },
+        (mapped) => ({ call: "refine", startMs: mapped.startMs, line: mapped.line }),
       );
       return startMs === null ? payoff : { ...payoff, startMs };
     } catch (error) {

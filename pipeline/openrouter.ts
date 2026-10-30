@@ -1,9 +1,10 @@
 // The same Decisions requests sent to OpenRouter's Decisions API, which serves many decision models behind one key.
 // See docs/openrouter-decisions.md. The client translates our request into OpenRouter's shape and its answers back
 // into the response shape of docs/decisions-api.md, so mapResponse and mapRefinement read both providers alike.
+import type { DecisionsQuestion } from "../shared/types.ts";
 import { isFiniteNumber, isRecord } from "./guards.ts";
 import {
-  type DecisionsAnswer, type DecisionsClient, type DecisionsQuestion, type DecisionsRequest, ModelError, postJson,
+  type DecisionsAnswer, type DecisionsClient, type DecisionsRequest, ModelError, postJson,
 } from "./decisions.ts";
 
 export const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";

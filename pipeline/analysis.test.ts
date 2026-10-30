@@ -362,13 +362,13 @@ describe("mapRefinement", () => {
     return mapRefinement(response, eggRefinementLines);
   }
 
-  it("maps the chosen line to its startMs", () => {
-    assert.deepEqual(map(() => {}), { startMs: 4_000, refusals: [], inputTokens: 95, cachedTokens: 0 });
+  it("maps the chosen line to its name and startMs", () => {
+    assert.deepEqual(map(() => {}), { startMs: 4_000, line: "L2", refusals: [], inputTokens: 95, cachedTokens: 0 });
   });
 
-  it("maps a refused start to no startMs", () => {
+  it("maps a refused start to no startMs and no line", () => {
     const mapped = map((response) => (response.answers[0] = { type: "refusal", name: "start" }));
-    assert.deepEqual(mapped, { startMs: null, refusals: ["start"], inputTokens: 95, cachedTokens: 0 });
+    assert.deepEqual(mapped, { startMs: null, line: null, refusals: ["start"], inputTokens: 95, cachedTokens: 0 });
   });
 
   const broken: [string, (response: ResponseBody) => void][] = [
