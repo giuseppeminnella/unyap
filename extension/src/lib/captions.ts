@@ -101,14 +101,20 @@ export function parseJson3(data: unknown): TranscriptLine[] {
   return lines;
 }
 
+/** Absent, false, "false" and 0 mean public; anything else counts as a marker, so the check fails closed. */
+function isMarked(value: unknown): boolean {
+  return value !== undefined && value !== false && value !== "false" && value !== 0;
+}
+
 /**
  * Whether the player response marks the video private (`videoDetails.isPrivate`) or unlisted
- * (`microformat.playerMicroformatRenderer.isUnlisted`). Only boolean true counts: a missing field means public.
+ * (`microformat.playerMicroformatRenderer.isUnlisted`). A missing field means public, but an unexpected value of a
+ * present field is treated as private: a change in how YouTube encodes the flag must not send a private video.
  */
 export function isPrivateOrUnlisted(response: unknown): boolean {
   if (!isRecord(response)) return false;
   const { videoDetails, microformat } = response;
   const renderer = isRecord(microformat) ? microformat.playerMicroformatRenderer : undefined;
-  const isPrivate = isRecord(videoDetails) && videoDetails.isPrivate === true;
-  return isPrivate || (isRecord(renderer) && renderer.isUnlisted === true);
+  const isPrivate = isRecord(videoDetails) && isMarked(videoDetails.isPrivate);
+  return isPrivate || (isRecord(renderer) && isMarked(renderer.isUnlisted));
 }

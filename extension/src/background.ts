@@ -5,10 +5,12 @@ import { runAnalysis } from "../../pipeline/analysis.ts";
 import { ANALYSIS_VERSION, createLiveClient, ModelError } from "../../pipeline/decisions.ts";
 import { createOpenRouterClient } from "../../pipeline/openrouter.ts";
 import type { AnalysisProgress, AnalyzeRequest } from "../../shared/types.ts";
+import { parseAnalyzeRequest } from "../../shared/validate.ts";
 import { evictOld, getCached, putCached } from "./lib/local-cache.ts";
 import {
   ANALYZE_PORT, type AnalysisPortMessage, type AnalyzeResponse, type CachedResponse, type WorkerMessage,
 } from "./lib/messages.ts";
+import { isAllowedSender, isAllowedVideoRequest } from "./lib/sender.ts";
 import {
   DEFAULT_SETTINGS, OPENROUTER_ORIGIN, openRouterModelOf, PROVIDER_NAMES, providerOf, type Settings,
 } from "./lib/settings.ts";
@@ -86,17 +88,27 @@ function isWorkerMessage(message: unknown): message is WorkerMessage {
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, _sender, sendResponse: (response: AnalyzeResponse | CachedResponse) => void) => {
+  (message: unknown, sender, sendResponse: (response: AnalyzeResponse | CachedResponse) => void) => {
     if (!isWorkerMessage(message)) return false;
+    if (!isAllowedSender(sender, chrome.runtime.id)) return false;
     if (message.type === "open-options") {
       chrome.runtime.openOptionsPage().catch(() => {});
       return false;
     }
     if (message.type === "cached") {
+      if (!isAllowedVideoRequest(sender, chrome.runtime.id, message.videoId)) {
+        sendResponse({ analysis: null, autoAnalyze: false });
+        return false;
+      }
       cached(message.videoId).then(sendResponse, () => sendResponse({ analysis: null, autoAnalyze: false }));
       return true;
     }
-    analyze(message.request).then(sendResponse, () => sendResponse(FAILED));
+    const request = parseAnalyzeRequest(message.request);
+    if (request === null || !isAllowedVideoRequest(sender, chrome.runtime.id, request.videoId)) {
+      sendResponse(FAILED);
+      return false;
+    }
+    analyze(request).then(sendResponse, () => sendResponse(FAILED));
     return true;
   },
 );
@@ -113,6 +125,10 @@ chrome.action.onClicked.addListener(() => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== ANALYZE_PORT) return;
+  if (!isAllowedSender(port.sender, chrome.runtime.id)) {
+    port.disconnect();
+    return;
+  }
   let open = true;
   let started = false;
   const report = (message: AnalysisPortMessage) => {
@@ -123,8 +139,14 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => { open = false; });
   port.onMessage.addListener((message: unknown) => {
     if (started || !isWorkerMessage(message) || message.type !== "analyze") return;
+    const request = parseAnalyzeRequest(message.request);
+    if (request === null || !isAllowedVideoRequest(port.sender, chrome.runtime.id, request.videoId)) {
+      report({ type: "result", response: FAILED });
+      if (open) port.disconnect();
+      return;
+    }
     started = true;
-    analyze(message.request, report).then(
+    analyze(request, report).then(
       (response) => report({ type: "result", response }),
       () => report({ type: "result", response: FAILED }),
     ).finally(() => { if (open) port.disconnect(); });

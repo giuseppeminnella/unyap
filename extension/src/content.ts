@@ -10,6 +10,7 @@ import {
   verdict,
 } from "../../shared/timeline.ts";
 import type { Analysis, AnalyzeRequest } from "../../shared/types.ts";
+import { MAX_CAPTURE_JSON_CHARS, parseAnalyzeRequest } from "../../shared/validate.ts";
 import { DebugOverlay } from "./lib/debug-overlay.ts";
 import {
   ANALYZE_PORT,
@@ -112,7 +113,11 @@ function button(text: string, className: string, onClick: (event: MouseEvent) =>
   node.type = "button";
   node.className = className;
   node.textContent = text;
-  node.addEventListener("click", onClick);
+  // Page scripts share this DOM and can call click(): only a real viewer click may spend the viewer's API key.
+  node.addEventListener("click", (event) => {
+    if (!event.isTrusted) return;
+    onClick(event);
+  });
   return node;
 }
 
@@ -412,23 +417,17 @@ function parseCaptureMessage(detail: string): CaptureMessage | null {
   ) {
     return { type: message.type, videoId: message.videoId };
   }
-  const request = message.request as Record<string, unknown> | null | undefined;
-  if (
-    message.type === "transcript" &&
-    typeof request === "object" &&
-    request !== null &&
-    typeof request.videoId === "string" &&
-    typeof request.title === "string" &&
-    typeof request.lengthSeconds === "number" &&
-    Array.isArray(request.transcript)
-  ) {
-    return { type: "transcript", request: request as unknown as AnalyzeRequest };
+  if (message.type === "transcript") {
+    const request = parseAnalyzeRequest(message.request);
+    return request === null ? null : { type: "transcript", request };
   }
   return null;
 }
 
 function onCapture(event: Event): void {
   if (!(event instanceof CustomEvent) || typeof event.detail !== "string") return;
+  // Refuse to parse a page-sized message; a real transcript is far below this.
+  if (event.detail.length > MAX_CAPTURE_JSON_CHARS) return;
   const message = parseCaptureMessage(event.detail);
   if (message === null) return;
   syncView();
