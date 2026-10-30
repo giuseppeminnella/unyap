@@ -1,10 +1,113 @@
-import type { Analysis, AnalysisProgress } from "../../../shared/types.ts";
+import { formatTime } from "../../../shared/timeline.ts";
+import type { Analysis, AnalysisProgress, CallAnswers, DecisionsQuestion } from "../../../shared/types.ts";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
   element.className = className;
   if (text !== undefined) element.textContent = text;
   return element;
+}
+
+function pct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+// The same "S1"-style names pipeline/decisions.ts gives segments and their scores; spelled out here so the content
+// bundle stays free of the pipeline.
+function segmentLabel(index: number): string {
+  return `S${index + 1}`;
+}
+
+/** One labeled row inside an expanded request or response. */
+function spec(name: string, text: string): HTMLElement {
+  const row = node("div", "unyap-debug-q");
+  row.append(node("strong", "unyap-debug-qname", name), node("p", "unyap-debug-qtext", text));
+  return row;
+}
+
+function specList(items: string[]): HTMLElement {
+  const list = node("ul", "unyap-debug-list");
+  for (const item of items) list.append(node("li", "", item));
+  return list;
+}
+
+type ScoreQuestion = Extract<DecisionsQuestion, { type: "score" }>;
+
+/** The questions in words: predicate and choice verbatim, the per-segment score series as one grouped block. */
+function requestBody(questions: DecisionsQuestion[]): HTMLElement {
+  const body = node("div", "unyap-debug-spec");
+  const scores = questions.filter((question): question is ScoreQuestion => question.type === "score");
+  const first = scores[0];
+  const scoresBlock = first === undefined ? null : (() => {
+    const block = node("div", "unyap-debug-q");
+    block.append(
+      node("strong", "unyap-debug-qname", `Score · ${first.name} … ${scores.at(-1)?.name ?? first.name}`),
+      node("p", "unyap-debug-qtext", `One per segment, ${scores.length} in total. The first reads: "${first.instructions}"`),
+      specList(first.levels.map((level) => `${level.label} — ${level.description}`)),
+    );
+    return block;
+  })();
+  for (const question of questions) {
+    if (question.type === "score") {
+      // The whole series goes at the first score's position.
+      if (question === first && scoresBlock) body.append(scoresBlock);
+      continue;
+    }
+    const kind = question.type === "predicate" ? "Predicate" : "Choice";
+    const block = node("div", "unyap-debug-q");
+    block.append(node("strong", "unyap-debug-qname", `${kind} · ${question.name}`));
+    block.append(node("p", "unyap-debug-qtext", question.instructions));
+    if (question.type === "choice") {
+      block.append(specList(question.choices.map((choice) => `${choice.value} — ${choice.description}`)));
+    }
+    body.append(block);
+  }
+  return body;
+}
+
+/** The main call's answers in words: delivers, the payoff choice and one row per segment. */
+function mainAnswersBody(detail: Extract<CallAnswers, { call: "main" }>, refusals: string[]): HTMLElement {
+  const body = node("div", "unyap-debug-spec");
+  body.append(spec("delivers", refusals.includes("delivers")
+    ? "refused — counted as 50%"
+    : `${pct(detail.delivers)} likely to deliver what the title promises`));
+  body.append(spec("payoff", refusals.includes("payoff")
+    ? "refused — no payoff chosen"
+    : detail.payoff === null
+    ? '"none" — the promise is never delivered'
+    : `${segmentLabel(detail.payoff.segmentIndex)} at ${formatTime(detail.payoff.startMs)} · ` +
+      `${pct(detail.payoff.confidence)} confident`));
+  const list = node("ul", "unyap-debug-list");
+  for (const segment of detail.segments) {
+    const name = segmentLabel(segment.index);
+    const judged = refusals.includes(`substance_${name}`)
+      ? "refused — counted as context 50%"
+      : `${segment.level} · ${pct(segment.substance)}`;
+    const item = node("li", "", `${name} · ${formatTime(segment.startMs)}–${formatTime(segment.endMs)} · ${judged}`);
+    if (detail.payoff?.segmentIndex === segment.index) {
+      item.dataset.payoff = "true";
+      item.append("← payoff");
+    }
+    list.append(item);
+  }
+  body.append(list);
+  return body;
+}
+
+/** The refinement's answer in words: the chosen line and whether it moved the payoff. */
+function refineAnswersBody(detail: Extract<CallAnswers, { call: "refine" }>, coarseStartMs: number | null): HTMLElement {
+  const body = node("div", "unyap-debug-spec");
+  if (detail.startMs === null) {
+    const kept = coarseStartMs === null ? "" : ` (${formatTime(coarseStartMs)})`;
+    body.append(spec("start", `refused — the payoff stays at the segment start${kept}`));
+    return body;
+  }
+  body.append(spec("start", `${detail.line ?? "?"} at ${formatTime(detail.startMs)}`));
+  const moved = coarseStartMs !== null && detail.startMs !== coarseStartMs;
+  body.append(node("p", "unyap-debug-qtext", moved
+    ? `The payoff moves from the segment start (${formatTime(coarseStartMs)}) to this line.`
+    : "The same as the segment start: the payoff does not move."));
+  return body;
 }
 
 /** A persistent DOM tree keeps progress transitions smooth even when both API calls finish quickly. */
@@ -26,6 +129,7 @@ export class DebugOverlay {
   private refineFallback = false;
   private mock = false;
   private done = false;
+  private coarsePayoffStartMs: number | null = null;
 
   constructor() {
     this.element.setAttribute("aria-label", "Unyap debug mode");
@@ -47,12 +151,17 @@ export class DebugOverlay {
     this.element.append(header, this.model, this.log, work);
   }
 
-  private entry(title: string, detail: string, atMs?: number, error = false): void {
+  private entry(title: string, detail: string, atMs?: number, error = false, expand?: { label: string; body: HTMLElement }): void {
     const row = node("li", "unyap-debug-entry");
     if (error) row.dataset.error = "true";
     const elapsed = atMs === undefined || this.firstAt === null ? "•" : `+${((atMs - this.firstAt) / 1000).toFixed(2)}s`;
     row.append(node("span", "unyap-debug-time", elapsed), node("strong", "unyap-debug-title", title));
     if (detail) row.append(node("p", "unyap-debug-description", detail));
+    if (expand) {
+      const details = node("details", "unyap-debug-expand");
+      details.append(node("summary", "unyap-debug-toggle", expand.label), expand.body);
+      row.append(details);
+    }
     this.log.append(row);
     this.log.scrollTop = this.log.scrollHeight;
   }
@@ -70,19 +179,39 @@ export class DebugOverlay {
         this.mock = event.mode === "mock";
         this.model.textContent = this.mock ? "Mock mode · no API requests" : `${event.model} · Decisions API`;
         this.status.textContent = event.call === "main" ? "SCORING" : "REFINING";
-        this.entry(`${this.mock ? "Mock" : "POST"} · ${event.call === "main" ? "Main request" : "Refine payoff"}`,
+        this.entry(
+          `${this.mock ? "Mock" : "POST"} · ${event.call === "main" ? "Main request" : "Refine payoff"}`,
           `${event.questions} ${event.questions === 1 ? "question" : "questions"} · ${event.choices} ` +
-          `${event.call === "main" ? "payoff choices" : "transcript lines"}`, event.atMs);
+          `${event.call === "main" ? "payoff choices" : "transcript lines"}`,
+          event.atMs,
+          false,
+          { label: "Request", body: requestBody(event.detail) },
+        );
         break;
-      case "call-end":
+      case "call-end": {
         this.refineFallback ||= event.call === "refine" && event.refusals > 0;
         if (!this.ended.has(event.call)) this.answered += event.questions;
         this.ended.add(event.call);
-        this.entry(`${event.call === "main" ? "Main" : "Refinement"} response · ${event.latencyMs} ms`,
+        const answers = event.detail;
+        let body: HTMLElement;
+        if (answers.call === "main") {
+          // Kept for the refinement's entry, which says whether its line moved the payoff.
+          this.coarsePayoffStartMs = answers.payoff?.startMs ?? null;
+          body = mainAnswersBody(answers, event.refusalNames);
+        } else {
+          body = refineAnswersBody(answers, this.coarsePayoffStartMs);
+        }
+        const refused = event.refusalNames.length > 0 ? ` · refused: ${event.refusalNames.join(", ")}` : "";
+        this.entry(
+          `${event.call === "main" ? "Main" : "Refinement"} response · ${event.latencyMs} ms`,
           `${event.questions} ${event.questions === 1 ? "reply" : "replies"} · ` +
-          `${event.inputTokens} input tokens (${event.cachedTokens} cached)` +
-          (event.refusals ? ` · ${event.refusals} ${event.refusals === 1 ? "refusal" : "refusals"}` : ""), event.atMs);
+          `${event.inputTokens} input tokens (${event.cachedTokens} cached)${refused}`,
+          event.atMs,
+          false,
+          { label: "Response", body },
+        );
         break;
+      }
       case "call-error":
         this.refineFallback ||= event.call === "refine";
         this.entry(`${event.call === "main" ? "Main" : "Refinement"} request failed`, event.error, event.atMs, true);
