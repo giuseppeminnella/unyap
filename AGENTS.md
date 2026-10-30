@@ -224,10 +224,16 @@ browser on youtube.com can fetch transcripts.
   Shared code lives in `src/lib/` (`captions.ts`, `settings.ts`, `messages.ts`,
   `local-cache.ts`).
 - Debug mode is a locally stored option (`debugMode`, default false). Analysis
-  ports relay safe progress from the worker to the isolated content script;
-  credentials stay in trusted contexts.
+  ports relay safe progress from the worker to the isolated content script: the
+  questions' wording, the mapped answers, counts and timings — never the prompt's
+  per-video content (title, description, transcript) or credentials.
   `src/lib/debug-overlay.ts` renders a translucent black panel in the right third
-  of the player, with live call logs and animated judgment progress. It identifies
+  of the player, with live call logs and animated judgment progress. Each request
+  and response entry expands (a "+" toggle) into the details in words: the
+  questions as asked (the predicate, the payoff choice with its segment choices,
+  the per-segment score series) and the answers as mapped (delivers probability,
+  the chosen payoff, one row per segment, the refinement's chosen line and
+  whether it moved the payoff, refusals by name). It identifies
   mock runs and failed/skipped refinements explicitly. It opens only for a new
   analysis: a cached result shows without the panel. Progress is
   batch-based (up to two API requests), and the display persists after completion.
