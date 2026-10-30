@@ -93,6 +93,8 @@ export type DecisionsMode = "live" | "mock";
 
 export interface DecisionsClient {
   readonly mode: DecisionsMode;
+  /** The model the client asks, when it is not the one in the request (OpenRouter picks its own). */
+  readonly model?: string;
   /** Resolves with the response body as docs/decisions-api.md shows it (unchecked), or rejects with a ModelError. */
   decide(request: DecisionsRequest, segments: readonly SegmentText[]): Promise<unknown>;
   /** The same for the refinement request built from `lines`. */
@@ -185,28 +187,30 @@ async function httpFailure(res: Response): Promise<string> {
   return typeof code === "string" && code !== "" ? `HTTP ${res.status} ${code}` : `HTTP ${res.status}`;
 }
 
-export function createLiveClient(apiKey: string, fetchFn: typeof fetch = fetch): DecisionsClient {
-  async function post(request: DecisionsRequest): Promise<unknown> {
-    const signal = AbortSignal.timeout(TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetchFn(DECISIONS_URL, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-        signal,
-      });
-    } catch (error) {
-      throw new ModelError(isTimeout(error) ? "timeout" : "network error");
-    }
-    if (!res.ok) throw new ModelError(await httpFailure(res));
-    try {
-      return (await res.json()) as unknown;
-    } catch (error) {
-      throw new ModelError(isTimeout(error) ? "timeout" : "invalid response");
-    }
+/** POSTs `body` as JSON with the key as a bearer token; resolves with the parsed reply or rejects with a ModelError. */
+export async function postJson(url: string, apiKey: string, body: unknown, fetchFn: typeof fetch): Promise<unknown> {
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetchFn(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (error) {
+    throw new ModelError(isTimeout(error) ? "timeout" : "network error");
   }
+  if (!res.ok) throw new ModelError(await httpFailure(res));
+  try {
+    return (await res.json()) as unknown;
+  } catch (error) {
+    throw new ModelError(isTimeout(error) ? "timeout" : "invalid response");
+  }
+}
 
+export function createLiveClient(apiKey: string, fetchFn: typeof fetch = fetch): DecisionsClient {
+  const post = (request: DecisionsRequest) => postJson(DECISIONS_URL, apiKey, request, fetchFn);
   return { mode: "live", decide: post, refine: post };
 }
 

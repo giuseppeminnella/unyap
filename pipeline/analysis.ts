@@ -230,7 +230,7 @@ export async function runAnalysis(
       () => client.decide(body, segments),
       (response) => mapResponse(response, request, segments),
       emit,
-      { call: "main", model: body.model, questions: body.questions.length, choices: segments.length + 1 },
+      { call: "main", model: client.model ?? body.model, questions: body.questions.length, choices: segments.length + 1 },
     );
   }
 
@@ -258,7 +258,7 @@ export async function runAnalysis(
         () => client.refine(body, lines),
         (response) => mapRefinement(response, lines),
         emit,
-        { call: "refine", model: body.model, questions: body.questions.length, choices: lines.length },
+        { call: "refine", model: client.model ?? body.model, questions: body.questions.length, choices: lines.length },
       );
       return startMs === null ? payoff : { ...payoff, startMs };
     } catch (error) {

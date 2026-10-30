@@ -84,6 +84,10 @@ test("the extension analyzes with the viewer's own key and caches locally", asyn
     expect(Object.keys(manifest.icons ?? {})).toEqual(["16", "32", "48", "128"]);
     expect(await worker.evaluate(() => chrome.permissions.contains({ origins: ["https://api.openai.com/*"] }))).toBe(true);
     expect(await worker.evaluate(() => chrome.permissions.contains({ permissions: ["unlimitedStorage"] }))).toBe(true);
+    // openrouter.ai is optional, asked for only when the viewer picks OpenRouter, so an update prompts nobody.
+    expect(manifest.host_permissions).toEqual(["https://api.openai.com/*"]);
+    expect(manifest.optional_host_permissions).toEqual(["https://openrouter.ai/*"]);
+    expect(await worker.evaluate(() => chrome.permissions.contains({ origins: ["https://openrouter.ai/*"] }))).toBe(false);
 
     const optionsUrl = `chrome-extension://${new URL(worker.url()).host}/options.html`;
     await expect.poll(() => context.pages().map((open) => open.url()), { message: "options open on install" })
@@ -217,6 +221,124 @@ test("an analysis that could not be cached is still shown", async ({}, info) => 
     const miss: CachedResponse = await page.evaluate((videoId) =>
       chrome.runtime.sendMessage({ type: "cached", videoId }), e2eEggVideo.videoId);
     expect(miss.analysis).toBeNull();
+  } finally {
+    await context.close();
+  }
+});
+
+/** OpenAI-shaped answers (from the mock client) in the shape OpenRouter's Decisions API returns them. */
+function asOpenRouterReply(response: unknown, model: string): unknown {
+  const { answers } = response as { answers: Record<string, unknown>[] };
+  const byName: Record<string, unknown> = {};
+  for (const answer of answers) {
+    const name = String(answer.name);
+    if (answer.type === "predicate") byName[name] = { type: "noul", noul: answer.probability };
+    if (answer.type === "choice") {
+      const probabilities = answer.probabilities as { value: string; probability: number }[];
+      byName[name] = {
+        type: "choice",
+        choice: answer.choice,
+        confidence: answer.confidence,
+        probabilities: Object.fromEntries(probabilities.map((entry) => [entry.value, entry.probability])),
+      };
+    }
+    if (answer.type === "score") {
+      const probabilities = answer.probabilities as { value: number; probability: number }[];
+      byName[name] = {
+        type: "score",
+        score: answer.score,
+        confidence: answer.confidence,
+        probabilities: Object.fromEntries(probabilities.map((entry) => [String(entry.value), entry.probability])),
+      };
+    }
+  }
+  return {
+    id: "gen-dec-e2e",
+    model: `${model}-20261006`,
+    answers: byName,
+    usage: { input_tokens: 400, output_tokens: 60 },
+  };
+}
+
+const OPENROUTER_KEY = "sk-or-v1-e2e0123456789abcdef0123456789";
+
+test("OpenRouter: the options save its key and model, and the worker analyzes through it", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    // Wait for the options tab the install opens, so it doesn't interrupt this page's navigation.
+    const optionsUrl = `chrome-extension://${new URL(worker.url()).host}/options.html`;
+    await expect.poll(() => context.pages().map((open) => open.url())).toContain(optionsUrl);
+    const page = await context.newPage();
+    await page.goto(optionsUrl);
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    await expect(page.getByLabel("OpenAI API key")).toBeVisible();
+    await expect(page.getByLabel("OpenRouter API key")).toBeHidden();
+
+    // An OpenRouter key pasted into the OpenAI field says where it belongs.
+    await page.getByLabel("OpenAI API key").fill(OPENROUTER_KEY);
+    await save.click();
+    await expect(page.getByText("That is an OpenRouter key: choose OpenRouter above.")).toBeVisible();
+
+    await page.getByRole("radio", { name: "OpenRouter" }).check();
+    await expect(page.getByLabel("OpenAI API key")).toBeHidden();
+    const key = page.getByLabel("OpenRouter API key");
+    await key.fill("not a key");
+    await save.click();
+    await expect(page.getByText("Paste an OpenRouter key: it starts with sk-or-.")).toBeVisible();
+
+    // Refusing Chrome's permission prompt saves nothing; allowing it saves the provider, key and model.
+    await key.fill(OPENROUTER_KEY);
+    await page.getByLabel("Model").selectOption("typesafe/jev-1.14");
+    await page.evaluate(() => { chrome.permissions.request = async () => false; });
+    await save.click();
+    await expect(page.getByText("Unyap needs your permission to reach openrouter.ai.")).toBeVisible();
+    expect(await worker.evaluate(() => chrome.storage.local.get("provider"))).toEqual({});
+    await page.evaluate(() => { chrome.permissions.request = async () => true; });
+    await save.click();
+    await expect(page.locator("#unyap-saved")).toHaveText("Saved. Reload the YouTube tab to apply.");
+    expect(await worker.evaluate(() =>
+      chrome.storage.local.get(["provider", "openaiApiKey", "openrouterApiKey", "openrouterModel"]))).toEqual({
+      provider: "openrouter", openaiApiKey: "", openrouterApiKey: OPENROUTER_KEY, openrouterModel: "typesafe/jev-1.14",
+    });
+
+    // The worker sends the chosen model to OpenRouter with the OpenRouter key.
+    const { main, refine } = await mockAnswers(e2eEggVideo);
+    await worker.evaluate(({ main, refine, key }) => {
+      const scope = globalThis as typeof globalThis & { sent?: { url: string; model: string }[] };
+      scope.sent = [];
+      chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
+      globalThis.fetch = async (input, init) => {
+        if (new Headers(init?.headers).get("Authorization") !== `Bearer ${key}`) throw new Error("Wrong key");
+        const body = JSON.parse(String(init?.body)) as { model: string; questions: Record<string, unknown> };
+        scope.sent?.push({ url: String(input), model: body.model });
+        return new Response(JSON.stringify("start" in body.questions ? refine : main), {
+          headers: { "Content-Type": "application/json" },
+        });
+      };
+    }, {
+      main: asOpenRouterReply(main, "typesafe/jev-1.14"),
+      refine: asOpenRouterReply(refine, "typesafe/jev-1.14"),
+      key: OPENROUTER_KEY,
+    });
+    const response: AnalyzeResponse = await page.evaluate((request) =>
+      chrome.runtime.sendMessage({ type: "analyze", request }), e2eEggVideo);
+    expect(response).toMatchObject({
+      ok: true,
+      analysis: { videoId: e2eEggVideo.videoId, model: "typesafe/jev-1.14-20261006" },
+    });
+    const sent = await worker.evaluate(() => (globalThis as typeof globalThis & { sent?: unknown[] }).sent);
+    expect(sent).toEqual([
+      { url: "https://openrouter.ai/api/alpha/decisions", model: "typesafe/jev-1.14" },
+      { url: "https://openrouter.ai/api/alpha/decisions", model: "typesafe/jev-1.14" },
+    ]);
+
+    // Without the permission (taken back in Chrome's settings) the pill asks for it instead of failing on the network.
+    await worker.evaluate(() => {
+      chrome.permissions.contains = (async () => false) as typeof chrome.permissions.contains;
+    });
+    const denied: AnalyzeResponse = await page.evaluate((request) =>
+      chrome.runtime.sendMessage({ type: "analyze", request: { ...request, videoId: "AAAAAAAAAAA" } }), e2eEggVideo);
+    expect(denied).toEqual({ ok: false, reason: "permission", provider: "OpenRouter" });
   } finally {
     await context.close();
   }

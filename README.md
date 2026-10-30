@@ -7,12 +7,15 @@ promised. Unyap is a Chrome extension that finds the moment the video actually
 delivers, shows which parts are filler, context or substance, and gives you an
 "Unyap it" button plus "Previous" / "Next good part".
 
-- **Your own OpenAI key, almost free.** The extension runs in your browser and
-  calls OpenAI's Decisions API with your key: one request asks every question
-  about a video at once, plus a short second one to pin the exact line. About
-  $0.001 per new video; results are cached in the browser for 60 days, so
-  repeats are free. Support for other AI providers is planned.
-- **Nothing goes to me.** The video's text goes only to OpenAI, and I store no
+- **Your own key, almost free.** The extension runs in your browser and calls
+  a Decisions API with your key: OpenAI's, or a decision model through
+  [OpenRouter](https://openrouter.ai), which serves models from several
+  companies with one key. One request asks every question about a video at
+  once, plus a short second one to pin the exact line. About $0.001 per new
+  video on OpenAI, less on most OpenRouter models; results are cached in the
+  browser for 60 days, so repeats are free.
+- **Nothing goes to me.** The video's text goes only to the provider you pick
+  (OpenAI, or OpenRouter and the company behind the model), and I store no
   data. Private and unlisted videos are skipped. [Privacy policy](https://giuseppe.dev/unyap/privacy/).
 - **Your responsibility.** You run Unyap on your computer with your own key, at
   your own responsibility and cost; it comes as is, without warranty.
@@ -22,7 +25,7 @@ delivers, shows which parts are filler, context or substance, and gives you an
 ## Install
 
 Get it from the [Chrome Web Store](https://chromewebstore.google.com/detail/unyap/jbmhegfmbdlkpiilfnjpmdkflfooobfe),
-paste your OpenAI API key in the options page that opens, then click
+choose OpenAI or OpenRouter in the options page that opens and paste your key, then click
 **Unyap this video** on any YouTube video with captions.
 
 **Debug mode** (in the options): a panel over the player shows each Decisions

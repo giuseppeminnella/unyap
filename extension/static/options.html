@@ -11,7 +11,19 @@
       <h1 class="unyap-options-title">Unyap</h1>
       <p class="unyap-options-intro">Impatience, now a browser extension.</p>
       <form id="unyap-form" class="unyap-form" novalidate>
-        <div class="unyap-field">
+        <fieldset class="unyap-field unyap-choice">
+          <legend class="unyap-label">Analyze with</legend>
+          <label class="unyap-check"><input type="radio" name="provider" value="openai" /> OpenAI</label>
+          <label class="unyap-check">
+            <input type="radio" name="provider" value="openrouter" aria-describedby="unyap-provider-help" />
+            OpenRouter
+          </label>
+          <p id="unyap-provider-help" class="unyap-help">
+            OpenRouter serves decision models from several companies with one key, including the one Unyap uses on
+            OpenAI.
+          </p>
+        </fieldset>
+        <div id="unyap-openai" class="unyap-field">
           <label class="unyap-label" for="unyap-api-key">OpenAI API key</label>
           <input
             id="unyap-api-key"
@@ -30,6 +42,36 @@
             videos you already analyzed are free. To remove the key, empty the field and save.
           </p>
           <p id="unyap-api-key-error" class="unyap-field-error" aria-live="polite"></p>
+        </div>
+        <div id="unyap-openrouter" class="unyap-field" hidden>
+          <label class="unyap-label" for="unyap-openrouter-key">OpenRouter API key</label>
+          <input
+            id="unyap-openrouter-key"
+            class="unyap-input"
+            name="openrouterApiKey"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="unyap-openrouter-key-help unyap-openrouter-key-error"
+          />
+          <p id="unyap-openrouter-key-help" class="unyap-help">
+            No key yet?
+            <a class="unyap-link" href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer"
+              >Get a key</a>
+            from OpenRouter and give it a credit limit, so spending stays capped. The key is stored only in this
+            browser and sent only to openrouter.ai; Unyap asks for permission to reach openrouter.ai when you save.
+            Videos you already analyzed are free. To remove the key, empty the field and save.
+          </p>
+          <p id="unyap-openrouter-key-error" class="unyap-field-error" aria-live="polite"></p>
+          <label class="unyap-label" for="unyap-openrouter-model">Model</label>
+          <select
+            id="unyap-openrouter-model"
+            class="unyap-input"
+            aria-describedby="unyap-openrouter-model-help"
+          ></select>
+          <p id="unyap-openrouter-model-help" class="unyap-help">
+            Unyap is tuned on GPT-6 Luna. The others cost less per video but may find the answer less often.
+          </p>
         </div>
         <div class="unyap-field">
           <label class="unyap-check" for="unyap-auto-analyze">

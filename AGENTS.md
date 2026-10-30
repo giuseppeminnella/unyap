@@ -1,9 +1,10 @@
 # AGENTS.md — Unyap
 
 Unyap ("Impatience, now a browser extension.") jumps you straight to the part of a YouTube video that delivers what
-its title promised. A Chrome extension reads the video's transcript, asks OpenAI's Decisions API (with the viewer's
-own key) where the payoff is and how much of each part is filler, and draws a substance strip over the progress bar
-plus an "Unyap it" button. Everything runs in the viewer's browser; there is no server.
+its title promised. A Chrome extension reads the video's transcript, asks a Decisions API (OpenAI's, or a decision
+model through OpenRouter, with the viewer's own key) where the payoff is and how much of each part is filler, and
+draws a substance strip over the progress bar plus an "Unyap it" button. Everything runs in the viewer's browser;
+there is no server.
 
 Built for the DevDay Community Hackathon, Berlin, 24 Oct 2026. The extension's home page, privacy policy and terms
 are on Giuseppe's blog: `https://giuseppe.dev/unyap/`, `/unyap/privacy/` and `/unyap/terms/` (`src/unyap/` in the
@@ -18,7 +19,7 @@ extension/     Chrome MV3 extension: src/*.ts entries (bundled to dist/*.js), sr
                (not entries), static/ (manifest, options page, stylesheet, icons), icon.svg (icon source)
 scripts/       build.ts (esbuild bundles), icons.ts (PNG icons from icon.svg), package.ts + zip.ts (store zip)
 e2e/           Playwright test that loads the built extension
-docs/          decisions-api.md, youtube-transcripts.md: read before touching those areas
+docs/          decisions-api.md, openrouter-decisions.md, youtube-transcripts.md: read before touching those areas
 ```
 
 ## Setup and commands
@@ -74,7 +75,10 @@ Input is `AnalyzeRequest` (shared/types.ts). Output is `Analysis`.
    transcript line belongs to the segment containing its `startMs`. Empty
    segments get the text `(no speech)`.
 3. **Ask** (the main call; with step 4's refinement there are two `POST /v1/decisions`
-   calls per analysis, model `gpt-6-luna`, see docs/decisions-api.md).
+   calls per analysis, model `gpt-6-luna`, see docs/decisions-api.md). With OpenRouter, `pipeline/openrouter.ts`
+   sends the same two requests to the viewer's chosen model in OpenRouter's shape and translates the answers back,
+   so the mapping below reads both providers alike (docs/openrouter-decisions.md). OpenRouter has no refusal
+   answer: a missing answer counts as one.
    The prompt layout and every question's wording live in `pipeline/decisions.ts`:
    - `input`: one user message, text: the title, the first 1,000 characters of
      the description, then one line per segment: `[S3 1:00-1:30] <text>`.
@@ -159,17 +163,26 @@ browser on youtube.com can fetch transcripts.
   `https://www.youtube.com/*`: one in the `MAIN` world (talks to `#movie_player`,
   captures the transcript), one isolated (UI, talks to the service worker).
   They talk through `CustomEvent`s on `document`.
-- The extension runs locally and talks to no server of ours. The viewer pastes
-  their own OpenAI API key in the options page (`openaiApiKey`, checked by
-  `normalizeApiKey`); the service worker runs the analysis itself
-  (`runAnalysis` from `pipeline/analysis.ts`, with `createLiveClient` from
-  `pipeline/decisions.ts`, bundled by esbuild), calling only
-  `https://api.openai.com/v1/decisions` (its one host permission). Keep
+- The extension runs locally and talks to no server of ours. The viewer picks a
+  provider in the options page (`provider`, default `openai`) and pastes their
+  own key: `openaiApiKey` (checked by `normalizeApiKey`) or `openrouterApiKey`
+  (`normalizeOpenRouterKey`) plus `openrouterModel`, one of the pinned
+  `OPENROUTER_MODELS` in `src/lib/settings.ts` (never a `~` alias). The service
+  worker runs the analysis itself (`runAnalysis` from `pipeline/analysis.ts`,
+  with `createLiveClient` from `pipeline/decisions.ts` or
+  `createOpenRouterClient` from `pipeline/openrouter.ts`, bundled by esbuild),
+  calling only `https://api.openai.com/v1/decisions` (its one required host
+  permission) or `https://openrouter.ai/api/alpha/decisions`. openrouter.ai is
+  an optional host permission: the options page asks for it when the viewer
+  saves an OpenRouter key, and the worker checks it before calling, so adding
+  OpenRouter prompts no existing user on update. Keep
   `pipeline/` free of Node-only imports. At startup the worker restricts
   `chrome.storage.local` to trusted contexts (`setAccessLevel`,
-  `TRUSTED_CONTEXTS`), so content scripts cannot read the key. Model failures
-  map to statuses: HTTP 401 → "OpenAI rejected your API key", 429 → quota or
-  rate limit, network or timeout → "can't reach OpenAI".
+  `TRUSTED_CONTEXTS`), so content scripts cannot read the keys. Model failures
+  map to statuses that name the provider: HTTP 401 → "<provider> rejected your
+  API key", 402 → credits ran out (OpenRouter), 429 → quota or rate limit,
+  network or timeout → "can't reach <provider>"; no openrouter.ai permission →
+  "allow openrouter.ai in the options".
 - Results are cached in `chrome.storage.local` (`unlimitedStorage`) by
   `src/lib/local-cache.ts`: one entry per video (`analysis:<videoId>`) with the
   save time and `ANALYSIS_VERSION`; entries older than 60 days or from another
@@ -201,7 +214,7 @@ browser on youtube.com can fetch transcripts.
   shows the skipped status instead. Live streams and premieres (no length yet) say they are not supported.
 - Entries: `page.ts` runs in the `MAIN` world (captures the transcript through
   `#movie_player`, no `chrome.*`), `content.ts` in the isolated world (draws the
-  UI, messages the service worker), `background.ts` is the service worker (OpenAI
+  UI, messages the service worker), `background.ts` is the service worker (model
   calls, local cache, reads the settings), `options.ts` is the options page.
   Shared code lives in `src/lib/` (`captions.ts`, `settings.ts`, `messages.ts`,
   `local-cache.ts`).
@@ -222,8 +235,9 @@ browser on youtube.com can fetch transcripts.
   unpacked → `extension/dist`.
 - `e2e/extension.spec.ts` loads the built extension in Chromium and verifies its
   manifest, icons, first-run options page, options, local cache and background
-  analysis. It replaces the worker's `fetch` with a fake api.openai.com that
-  answers with the pipeline's mock client; it never calls OpenAI.
+  analysis, and the OpenRouter path (options, permission, the model sent). It
+  replaces the worker's `fetch` with a fake api.openai.com or openrouter.ai that
+  answers with the pipeline's mock client; it never calls a real API.
 - YouTube cannot be tested from Playwright: under automation the player's
   timedtext requests come back with empty bodies. Automated checks use a fixture
   page routed onto `https://www.youtube.com/watch?v=…` (with a fake

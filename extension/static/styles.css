@@ -246,6 +246,20 @@
   font-weight: 600;
 }
 
+.unyap-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.unyap-choice legend {
+  padding: 0;
+}
+
+.unyap-field[hidden] {
+  display: none;
+}
+
 .unyap-options-cache {
   justify-items: start;
   margin-top: 20px;

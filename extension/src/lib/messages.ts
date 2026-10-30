@@ -45,7 +45,8 @@ export type AnalysisPortMessage =
 /** The service worker's answer to an `analyze` message. `message` is the text after "Unyap: ". */
 export type AnalyzeResponse =
   | { ok: true; analysis: Analysis }
-  | { ok: false; reason: "settings" | "auth" | "network" }
+  // `provider` is the name the viewer knows ("OpenAI", "OpenRouter"). "permission": openrouter.ai is not allowed.
+  | { ok: false; reason: "settings" | "auth" | "network" | "permission"; provider: string }
   | { ok: false; reason: "failed"; message: string };
 
 /** The video id of a watch page URL, or null for any other page. */
