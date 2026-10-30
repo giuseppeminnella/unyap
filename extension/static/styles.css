@@ -467,7 +467,7 @@
 .unyap-debug {
   position: absolute;
   inset: 0 0 56px auto;
-  z-index: 60;
+  z-index: 80;
   box-sizing: border-box;
   width: 33.333333%;
   padding: 16px;
@@ -487,7 +487,29 @@
   overflow-wrap: anywhere;
 }
 
-.unyap-debug-header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.unyap-debug-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.unyap-debug-controls { display: flex; gap: 4px; margin-left: auto; }
+.unyap-debug-action {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #d3dae2;
+  font: 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+.unyap-debug-action:hover { background: rgb(255 255 255 / 15%); color: #fff; }
+.unyap-debug-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.unyap-debug[data-minimized="true"] {
+  inset: 0 0 auto auto;
+  width: auto;
+  max-width: min(280px, 80%);
+  padding: 8px 10px;
+}
+.unyap-debug[data-minimized="true"] > :not(.unyap-debug-header) { display: none; }
+.unyap-debug[data-minimized="true"] .unyap-debug-header { flex-wrap: nowrap; }
 .unyap-debug-brand { font-size: 11px; letter-spacing: 0.06em; }
 .unyap-debug-status { color: #ffad80; font-size: 10px; }
 .unyap-debug-model { margin: 0; color: #b9c2cc; font-size: 10px; }

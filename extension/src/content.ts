@@ -199,6 +199,10 @@ function startCapture(target: View): void {
     try { target.port.disconnect(); } catch { /* already closed */ }
     target.port = null;
   }
+  if (target.debug) {
+    target.debug.element.remove();
+    target.debug = null;
+  }
   target.handled = false;
   target.requested = true;
   show(target, analyzing());
@@ -518,9 +522,12 @@ function analyze(target: View, request: AnalyzeRequest): void {
   port.onMessage.addListener((message: AnalysisPortMessage) => {
     if (view !== target || finished || target.generation !== generation) return;
     if (message.type === "debug" && message.enabled) {
-      target.debug = new DebugOverlay();
+      const overlay = new DebugOverlay(() => {
+        if (target.debug === overlay) target.debug = null;
+      });
+      target.debug = overlay;
       for (const type of CONTAINED_EVENTS) {
-        target.debug.element.addEventListener(type, (event) => event.stopPropagation());
+        overlay.element.addEventListener(type, (event) => event.stopPropagation());
       }
       render();
     } else if (message.type === "progress") target.debug?.progress(message.event);

@@ -113,6 +113,9 @@ function refineAnswersBody(detail: Extract<CallAnswers, { call: "refine" }>, coa
 /** A persistent DOM tree keeps progress transitions smooth even when both API calls finish quickly. */
 export class DebugOverlay {
   readonly element = node("section", "unyap-debug");
+  private readonly minimizeButton: HTMLButtonElement;
+  private readonly closeButton: HTMLButtonElement;
+  private readonly onClose: (() => void) | undefined;
   private readonly status = node("span", "unyap-debug-status", "CONNECTING");
   private readonly model = node("p", "unyap-debug-model", "Waiting for the analysis…");
   private readonly log = node("ol", "unyap-debug-log");
@@ -129,13 +132,38 @@ export class DebugOverlay {
   private refineFallback = false;
   private mock = false;
   private done = false;
+  private minimized = false;
+  private closed = false;
   private coarsePayoffStartMs: number | null = null;
 
-  constructor() {
+  constructor(onClose?: () => void) {
+    this.onClose = onClose;
     this.element.setAttribute("aria-label", "Unyap debug mode");
     this.element.dataset.state = "running";
+    this.element.dataset.minimized = "false";
+
+    this.minimizeButton = node("button", "unyap-debug-action", "−");
+    this.minimizeButton.type = "button";
+    this.minimizeButton.setAttribute("aria-label", "Minimize debug panel");
+    this.minimizeButton.title = "Minimize";
+    this.minimizeButton.addEventListener("click", (event) => {
+      if (!event.isTrusted) return;
+      this.toggleMinimized();
+    });
+
+    this.closeButton = node("button", "unyap-debug-action", "×");
+    this.closeButton.type = "button";
+    this.closeButton.setAttribute("aria-label", "Close debug panel");
+    this.closeButton.title = "Close";
+    this.closeButton.addEventListener("click", (event) => {
+      if (!event.isTrusted) return;
+      this.close();
+    });
+
+    const controls = node("div", "unyap-debug-controls");
+    controls.append(this.minimizeButton, this.closeButton);
     const header = node("div", "unyap-debug-header");
-    header.append(node("strong", "unyap-debug-brand", "UNYAP / DEBUG"), this.status);
+    header.append(node("strong", "unyap-debug-brand", "UNYAP / DEBUG"), this.status, controls);
     this.log.setAttribute("role", "log");
     this.log.setAttribute("aria-label", "Analysis activity");
     this.log.tabIndex = 0;
@@ -166,7 +194,26 @@ export class DebugOverlay {
     this.log.scrollTop = this.log.scrollHeight;
   }
 
+  private toggleMinimized(): void {
+    this.minimized = !this.minimized;
+    this.element.dataset.minimized = String(this.minimized);
+    this.minimizeButton.textContent = this.minimized ? "+" : "−";
+    this.minimizeButton.setAttribute(
+      "aria-label",
+      this.minimized ? "Expand debug panel" : "Minimize debug panel",
+    );
+    this.minimizeButton.title = this.minimized ? "Expand" : "Minimize";
+  }
+
+  private close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.element.remove();
+    this.onClose?.();
+  }
+
   progress(event: AnalysisProgress): void {
+    if (this.closed) return;
     this.firstAt ??= event.atMs;
     switch (event.type) {
       case "prepared":
@@ -228,6 +275,7 @@ export class DebugOverlay {
   }
 
   finish(analysis: Analysis | null, error?: string): void {
+    if (this.closed) return;
     this.done = true;
     this.element.dataset.state = analysis ? "complete" : "error";
     this.status.textContent = analysis ? (analysis.cached ? "CACHED" : "READY") : "STOPPED";
