@@ -387,3 +387,41 @@ test("OpenRouter: the options save its key and model, and the worker analyzes th
     await context.close();
   }
 });
+
+test("switching providers keeps both keys", async ({}, info) => {
+  const { context, worker } = await launch(info.outputPath("profile"));
+  try {
+    const optionsUrl = `chrome-extension://${new URL(worker.url()).host}/options.html`;
+    await expect.poll(() => context.pages().map((open) => open.url())).toContain(optionsUrl);
+    const page = await context.newPage();
+    await page.goto(optionsUrl);
+    const save = page.getByRole("button", { name: "Save", exact: true });
+
+    await page.getByLabel("OpenAI API key").fill(KEY);
+    await save.click();
+    await expect(page.locator("#unyap-saved")).toHaveText("Saved. Reload the YouTube tab to apply.");
+
+    await page.getByRole("radio", { name: "OpenRouter" }).check();
+    await page.getByLabel("OpenRouter API key").fill(OPENROUTER_KEY);
+    await page.evaluate(() => { chrome.permissions.request = async () => true; });
+    await save.click();
+    await expect(page.locator("#unyap-saved")).toHaveText("Saved. Reload the YouTube tab to apply.");
+    expect(await worker.evaluate(() =>
+      chrome.storage.local.get(["provider", "openaiApiKey", "openrouterApiKey"]))).toEqual({
+      provider: "openrouter", openaiApiKey: KEY, openrouterApiKey: OPENROUTER_KEY,
+    });
+
+    await page.getByRole("radio", { name: "OpenAI" }).check();
+    await expect(page.getByLabel("OpenAI API key")).toHaveValue(KEY);
+    await save.click();
+    await expect(page.locator("#unyap-saved")).toHaveText("Saved. Reload the YouTube tab to apply.");
+    expect(await worker.evaluate(() => chrome.storage.local.get(["openaiApiKey", "openrouterApiKey"]))).toEqual({
+      openaiApiKey: KEY, openrouterApiKey: OPENROUTER_KEY,
+    });
+
+    await page.getByRole("radio", { name: "OpenRouter" }).check();
+    await expect(page.getByLabel("OpenRouter API key")).toHaveValue(OPENROUTER_KEY);
+  } finally {
+    await context.close();
+  }
+});
