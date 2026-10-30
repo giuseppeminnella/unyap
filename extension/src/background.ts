@@ -8,11 +8,13 @@ import type { AnalysisProgress, AnalyzeRequest } from "../../shared/types.ts";
 import { parseAnalyzeRequest } from "../../shared/validate.ts";
 import { evictOld, getCached, putCached } from "./lib/local-cache.ts";
 import {
-  ANALYZE_PORT, type AnalysisPortMessage, type AnalyzeResponse, type CachedResponse, type WorkerMessage,
+  ANALYZE_PORT, type AnalysisPortMessage, type AnalyzeResponse, type CachedResponse, type SetModelResponse,
+  type WorkerMessage,
 } from "./lib/messages.ts";
 import { isAllowedSender, isAllowedVideoRequest } from "./lib/sender.ts";
 import {
-  DEFAULT_SETTINGS, OPENROUTER_ORIGIN, openRouterModelOf, PROVIDER_NAMES, providerOf, type Settings,
+  DEFAULT_SETTINGS, OPENROUTER_MODELS, OPENROUTER_ORIGIN, openRouterModelOf, PROVIDER_NAMES, providerOf,
+  type Settings,
 } from "./lib/settings.ts";
 
 // storage.local is readable from content scripts by default; keep the API key out of YouTube's renderer.
@@ -25,6 +27,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const FAILED: AnalyzeResponse = { ok: false, reason: "failed", message: "the analysis failed." };
+const CACHED_FALLBACK: CachedResponse = {
+  analysis: null, autoAnalyze: false, provider: "openai", openrouterModel: DEFAULT_SETTINGS.openrouterModel,
+};
 
 /** What the pill says for a failed model call. `reason` is safe: status and error code only, never the message. */
 function failure(error: unknown, provider: string): AnalyzeResponse {
@@ -77,30 +82,50 @@ async function analyze(request: AnalyzeRequest, report?: (message: AnalysisPortM
 async function cached(videoId: string): Promise<CachedResponse> {
   const settings = await chrome.storage.local.get<Settings>(DEFAULT_SETTINGS);
   const analysis = await getCached(chrome.storage.local, videoId, ANALYSIS_VERSION, Date.now()).catch(() => null);
-  return { analysis, autoAnalyze: settings.autoAnalyze === true };
+  return {
+    analysis,
+    autoAnalyze: settings.autoAnalyze === true,
+    provider: providerOf(settings),
+    openrouterModel: openRouterModelOf(settings),
+  };
+}
+
+/** Stores a model the options offer; anything else leaves the stored model alone. */
+function setModel(model: string): Promise<SetModelResponse> {
+  if (!OPENROUTER_MODELS.some((candidate) => candidate.id === model)) {
+    return Promise.resolve({ ok: false, model: "" });
+  }
+  return chrome.storage.local.get<Settings>(DEFAULT_SETTINGS)
+    .then((settings) => chrome.storage.local.set({ ...settings, openrouterModel: model }))
+    .then(() => ({ ok: true, model }), () => ({ ok: false, model: "" }));
 }
 
 function isWorkerMessage(message: unknown): message is WorkerMessage {
   if (!isRecord(message)) return false;
   if (message.type === "analyze") return isRecord(message.request);
   if (message.type === "cached") return typeof message.videoId === "string" && /^[A-Za-z0-9_-]{11}$/.test(message.videoId);
+  if (message.type === "set-model") return typeof message.model === "string";
   return message.type === "open-options";
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: unknown, sender, sendResponse: (response: AnalyzeResponse | CachedResponse) => void) => {
+  (message: unknown, sender, sendResponse: (response: AnalyzeResponse | CachedResponse | SetModelResponse) => void) => {
     if (!isWorkerMessage(message)) return false;
     if (!isAllowedSender(sender, chrome.runtime.id)) return false;
     if (message.type === "open-options") {
       chrome.runtime.openOptionsPage().catch(() => {});
       return false;
     }
+    if (message.type === "set-model") {
+      void setModel(message.model).then(sendResponse);
+      return true;
+    }
     if (message.type === "cached") {
       if (!isAllowedVideoRequest(sender, chrome.runtime.id, message.videoId)) {
-        sendResponse({ analysis: null, autoAnalyze: false });
+        sendResponse(CACHED_FALLBACK);
         return false;
       }
-      cached(message.videoId).then(sendResponse, () => sendResponse({ analysis: null, autoAnalyze: false }));
+      cached(message.videoId).then(sendResponse, () => sendResponse(CACHED_FALLBACK));
       return true;
     }
     const request = parseAnalyzeRequest(message.request);
