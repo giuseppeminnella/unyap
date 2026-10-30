@@ -68,7 +68,7 @@ export class DebugOverlay {
       case "call-start":
         this.calls.add(event.call);
         this.mock = event.mode === "mock";
-        this.model.textContent = this.mock ? "Mock mode · no OpenAI requests" : `${event.model} · /v1/decisions`;
+        this.model.textContent = this.mock ? "Mock mode · no API requests" : `${event.model} · Decisions API`;
         this.status.textContent = event.call === "main" ? "SCORING" : "REFINING";
         this.entry(`${this.mock ? "Mock" : "POST"} · ${event.call === "main" ? "Main request" : "Refine payoff"}`,
           `${event.questions} ${event.questions === 1 ? "question" : "questions"} · ${event.choices} ` +

@@ -53,9 +53,11 @@ const CONTAINED_EVENTS = [
 
 const TEXT = {
   analyzing: "Unyap: analyzing…",
-  settings: "Unyap: add your OpenAI API key in the options.",
-  auth: "Unyap: OpenAI rejected your API key.",
-  network: "Unyap: can't reach OpenAI.",
+  settings: (provider: string) => `Unyap: add your ${provider} API key in the options.`,
+  auth: (provider: string) => `Unyap: ${provider} rejected your API key.`,
+  network: (provider: string) => `Unyap: can't reach ${provider}.`,
+  permission: "Unyap: allow openrouter.ai in the options (save them again).",
+  stopped: "Unyap: the analysis stopped. Try again.",
   noTranscript: "Unyap: this video has no transcript.",
   captureFailed: "Unyap: couldn't read the transcript.",
   notPublic: "Unyap: skipped (private or unlisted video).",
@@ -335,15 +337,17 @@ function render(): void {
 }
 
 function responseDisplay(response: AnalyzeResponse | undefined): Display {
-  if (response === undefined) return status(TEXT.network);
+  if (response === undefined) return status(TEXT.stopped);
   if (response.ok) return { kind: "analysis", analysis: response.analysis };
   switch (response.reason) {
     case "settings":
-      return status(TEXT.settings, true);
+      return status(TEXT.settings(response.provider), true);
     case "auth":
-      return status(TEXT.auth, true);
+      return status(TEXT.auth(response.provider), true);
     case "network":
-      return status(TEXT.network);
+      return status(TEXT.network(response.provider));
+    case "permission":
+      return status(TEXT.permission, true);
     case "failed":
       return status(`Unyap: ${response.message}`);
   }
